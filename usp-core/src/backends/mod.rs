@@ -24,8 +24,11 @@ pub use crate::types::{BackendType, BackendStats, StoreReceipt};
 use crate::error::Result;
 
 /// Backend configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub enum BackendConfig {
+    /// Default configuration
+    #[default]
+    Default,
     Local {
         data_dir: PathBuf,
         max_cache_size: u64,
