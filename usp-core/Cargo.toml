@@ -1,0 +1,27 @@
+[package]
+name = "usp-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+async-trait.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+bytes.workspace = true
+futures.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+multihash.workspace = true
+hex.workspace = true
+sha2.workspace = true
+glob.workspace = true
+chrono.workspace = true
+lru.workspace = true
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile.workspace = true
