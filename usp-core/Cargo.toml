@@ -25,6 +25,9 @@ lru.workspace = true
 # P2P features
 libp2p = { workspace = true, features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns"] }
 
+# For retry jitter
+rand = "0.8"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile.workspace = true

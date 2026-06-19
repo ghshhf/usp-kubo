@@ -13,3 +13,5 @@ pub mod utils;
 
 pub use error::{Error, Result};
 pub use types::*;
+pub use hub::StorageHub;
+pub use utils::{RetryConfig, with_retry};

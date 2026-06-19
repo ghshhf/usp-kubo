@@ -7,6 +7,7 @@ use crate::backends::StorageBackend;
 use crate::router::BackendRouter;
 use crate::types::*;
 use crate::error::Result;
+use crate::utils::RetryConfig;
 
 /// Unified Storage Hub - main entry point for all storage operations
 pub struct StorageHub {
@@ -14,8 +15,15 @@ pub struct StorageHub {
 }
 
 impl StorageHub {
+    /// Create a new StorageHub with default config
     pub fn new() -> Self {
         let router = BackendRouter::new();
+        Self { router: Arc::new(router) }
+    }
+
+    /// Create with custom retry configuration
+    pub fn with_retry_config(config: RetryConfig) -> Self {
+        let router = BackendRouter::with_retry_config(config);
         Self { router: Arc::new(router) }
     }
 
@@ -26,37 +34,35 @@ impl StorageHub {
 
     /// Store data
     pub async fn put(&self, key: &str, value: Bytes, opts: StorageOptions) -> Result<StoreReceipt> {
+        tracing::debug!("PUT {}", key);
         self.router.store(key, value, opts).await
     }
 
     /// Read data
     pub async fn get(&self, key: &str) -> Result<Option<Bytes>> {
+        tracing::debug!("GET {}", key);
         self.router.retrieve(key).await
     }
 
-    /// Delete data
+    /// Delete data from all registered backends
     pub async fn delete(&self, key: &str) -> Result<()> {
-        let backends = self.router.backends().await;
-        let backends_guard = backends.read().await;
-        for backend in backends_guard.values() {
-            backend.delete(key).await?;
-        }
-        Ok(())
+        tracing::debug!("DELETE {}", key);
+        self.router.delete_all(key).await
     }
 
-    /// Check if key exists
+    /// Check if key exists in any backend
     pub async fn exists(&self, key: &str) -> Result<bool> {
         let backends = self.router.backends().await;
         let backends_guard = backends.read().await;
         for backend in backends_guard.values() {
-            if backend.exists(key).await? {
+            if backend.exists(key).await.unwrap_or(false) {
                 return Ok(true);
             }
         }
         Ok(false)
     }
 
-    /// Get storage statistics
+    /// Get storage statistics across all backends
     pub async fn stat(&self) -> Result<StorageStats> {
         self.router.stats().await
     }
