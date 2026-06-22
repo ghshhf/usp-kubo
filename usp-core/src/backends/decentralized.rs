@@ -230,14 +230,6 @@ impl StorageBackend for DecentralizedStorage {
     }
 
     async fn init(&self, config: BackendConfig) -> Result<()> {
-        // Handle data directory from config
-        if let BackendConfig::Decentralized { config: cfg, .. } = config {
-            if let Some(dir) = cfg.get("data_dir").and_then(|v| v.as_str()) {
-                // data_dir is set via config, but we already have it from constructor
-                let _ = dir;
-            }
-        }
-
         // Create data directory
         tokio::fs::create_dir_all(&self.data_dir).await?;
 
@@ -451,6 +443,13 @@ impl StorageBackend for DecentralizedStorage {
             available_space: u64::MAX,
             item_count,
         })
+    }
+
+    async fn list_keys(&self) -> Result<Vec<String>> {
+        let cids = self.stored_cids.read().await;
+        let mut keys: Vec<String> = cids.keys().cloned().collect();
+        keys.sort();
+        Ok(keys)
     }
 }
 

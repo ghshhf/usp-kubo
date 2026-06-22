@@ -148,4 +148,34 @@ impl StorageBackend for LocalBackend {
             item_count,
         })
     }
+
+    async fn list_keys(&self) -> Result<Vec<String>> {
+        let data_dir = self.data_dir.clone();
+        tokio::task::spawn_blocking(move || list_keys_sync(&data_dir, &data_dir))
+            .await
+            .map_err(|e| crate::Error::Storage(format!("list_keys task join error: {}", e)))?
+    }
+}
+
+/// Recursively list keys (relative paths) under `current`, stripping `base`.
+fn list_keys_sync(base: &std::path::Path, current: &std::path::Path) -> std::io::Result<Vec<String>> {
+    let mut keys = Vec::new();
+    if !current.is_dir() {
+        return Ok(keys);
+    }
+    for entry in std::fs::read_dir(current)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            if let Ok(key) = path.strip_prefix(base) {
+                let key_str = key
+                    .to_string_lossy()
+                    .replace(std::path::MAIN_SEPARATOR, "/");
+                keys.push(key_str);
+            }
+        } else if path.is_dir() {
+            keys.extend(list_keys_sync(base, &path)?);
+        }
+    }
+    Ok(keys)
 }

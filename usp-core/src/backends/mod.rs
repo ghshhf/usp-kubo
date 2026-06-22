@@ -78,4 +78,11 @@ pub trait StorageBackend: Send + Sync {
 
     /// Get backend statistics
     async fn stats(&self) -> Result<BackendStats>;
+
+    /// List all keys managed by this backend.
+    /// Not all backends support enumeration — unsupported backends return Ok([]).
+    async fn list_keys(&self) -> Result<Vec<String>> {
+        let _ = self;
+        Ok(Vec::new())
+    }
 }

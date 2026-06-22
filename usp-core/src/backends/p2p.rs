@@ -334,6 +334,18 @@ impl StorageBackend for P2PBackend {
             item_count,
         })
     }
+
+    async fn list_keys(&self) -> Result<Vec<String>> {
+        let stored = self.stored_data.read().await;
+        // Only return user-facing keys (non-CID keys).
+        // CID keys are identifiable by their "Qm" prefix.
+        let keys: Vec<String> = stored
+            .keys()
+            .filter(|k| !k.starts_with("Qm"))
+            .cloned()
+            .collect();
+        Ok(keys)
+    }
 }
 
 /// The background swarm task. Owns the `Swarm` and processes commands.

@@ -3,7 +3,7 @@
 use anyhow::Result;
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use usp_core::backends::{
@@ -102,17 +102,17 @@ async fn main() -> Result<()> {
             BackendType::Local => {
                 let local = Arc::new(LocalBackend::new(cli.data_dir.clone()));
                 local.init(BackendConfig::Default).await?;
-                hub.register_backend(local.clone()).await;
+                let registered = hub.register_backend(local.clone()).await;
                 println!(
-                    "Initialized Local backend with data dir: {:?}",
-                    cli.data_dir
+                    "Initialized {:?} backend with data dir: {:?}",
+                    registered, cli.data_dir
                 );
             }
             BackendType::P2P => {
                 let p2p = Arc::new(P2PBackend::new()?);
                 p2p.init(BackendConfig::Default).await?;
-                hub.register_backend(p2p.clone()).await;
-                println!("Initialized P2P backend");
+                let registered = hub.register_backend(p2p.clone()).await;
+                println!("Initialized {:?} backend", registered);
             }
             BackendType::CloudS3 => {
                 let endpoint = std::env::var("USP_S3_ENDPOINT").ok();
@@ -133,8 +133,8 @@ async fn main() -> Result<()> {
                     path_prefix: None,
                 })
                 .await?;
-                hub.register_backend(s3.clone()).await;
-                println!("Initialized S3 backend (bucket: {})", bucket);
+                let registered = hub.register_backend(s3.clone()).await;
+                println!("Initialized {:?} backend (bucket: {})", registered, bucket);
             }
             BackendType::Decentralized => {
                 let data_dir = cli.data_dir.join(".decentralized");
@@ -147,8 +147,8 @@ async fn main() -> Result<()> {
                     .unwrap(),
                 );
                 decentralized.init(BackendConfig::Default).await?;
-                hub.register_backend(decentralized.clone()).await;
-                println!("Initialized Decentralized (IPFS) backend");
+                let registered = hub.register_backend(decentralized.clone()).await;
+                println!("Initialized {:?} backend", registered);
             }
         }
         println!("Backend initialized. Use 'usp store' to start storing data.");
@@ -158,7 +158,8 @@ async fn main() -> Result<()> {
     // Register local backend by default for Store/Get/List/Delete operations
     let local = Arc::new(LocalBackend::new(cli.data_dir.clone()));
     local.init(BackendConfig::Default).await?;
-    hub.register_backend(local.clone()).await;
+    let local_type = hub.register_backend(local.clone()).await;
+    tracing::debug!("Registered default backend: {:?}", local_type);
 
     match &cli.command {
         Commands::Store { key, file } => {
@@ -180,11 +181,13 @@ async fn main() -> Result<()> {
             }
         },
         Commands::List => {
-            let data_dir = &cli.data_dir;
-            if data_dir.exists() {
-                list_keys_recursive(data_dir.as_path(), data_dir.as_path()).await?;
+            let keys = hub.list_keys().await;
+            if keys.is_empty() {
+                println!("No keys found. Use 'usp store <key> <file>' to store data.");
             } else {
-                println!("No data stored yet.");
+                for key in &keys {
+                    println!("{}", key);
+                }
             }
         }
         Commands::Delete { key } => {
@@ -226,39 +229,5 @@ async fn main() -> Result<()> {
         }
     }
 
-    Ok(())
-}
-
-/// Recursively list keys in the data directory
-fn list_keys_sync(base: &Path, current: &Path) -> Result<Vec<String>> {
-    let mut keys = Vec::new();
-    for entry in std::fs::read_dir(current)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_file() {
-            let key = path
-                .strip_prefix(base)
-                .map(|p| p.to_string_lossy().replace('\\', "/"))
-                .unwrap_or_else(|_| path.file_name().unwrap().to_string_lossy().to_string());
-            keys.push(key);
-        } else if path.is_dir() {
-            keys.extend(list_keys_sync(base, &path)?);
-        }
-    }
-    Ok(keys)
-}
-
-/// Recursively list keys in the data directory using async file operations
-async fn list_keys_recursive(base: &Path, current: &Path) -> Result<()> {
-    let keys = tokio::task::spawn_blocking({
-        let base = base.to_path_buf();
-        let current = current.to_path_buf();
-        move || list_keys_sync(&base, &current)
-    })
-    .await??;
-
-    for key in keys {
-        println!("{}", key);
-    }
     Ok(())
 }

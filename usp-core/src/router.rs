@@ -40,15 +40,39 @@ impl BackendRouter {
         }
     }
 
-    /// Get reference to backends map
-    pub async fn backends(&self) -> Arc<RwLock<HashMap<BackendType, Arc<dyn StorageBackend>>>> {
-        self.backends.clone()
+    /// Get a snapshot of registered backends. Returns an opaque snapshot
+    /// so callers cannot mutate the router's internal map.
+    pub async fn backends_snapshot(
+        &self,
+    ) -> Vec<(BackendType, Arc<dyn StorageBackend>)> {
+        let guard = self.backends.read().await;
+        guard.iter().map(|(k, v)| (*k, v.clone())).collect()
     }
 
-    /// Register a backend
-    pub async fn register_backend(&self, backend: Arc<dyn StorageBackend>) {
+    /// Register a backend and return its type for confirmation.
+    pub async fn register_backend(&self, backend: Arc<dyn StorageBackend>) -> BackendType {
+        let backend_type = backend.backend_type();
         let mut backends = self.backends.write().await;
-        backends.insert(backend.backend_type(), backend);
+        backends.insert(backend_type, backend);
+        backend_type
+    }
+
+    /// List all keys across all registered backends.
+    /// Returns a deduplicated list of keys.
+    pub async fn list_keys(&self) -> Vec<String> {
+        let snapshot = self.backends_snapshot().await;
+        let mut all_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+        for (_, backend) in &snapshot {
+            match backend.list_keys().await {
+                Ok(keys) => all_keys.extend(keys),
+                Err(err) => tracing::warn!("list_keys on {:?} failed: {}", backend.backend_type(), err),
+            }
+        }
+
+        let mut keys: Vec<String> = all_keys.into_iter().collect();
+        keys.sort();
+        keys
     }
 
     /// Select best backend for given key, options and data size
@@ -183,16 +207,13 @@ impl BackendRouter {
 
     /// Get statistics
     pub async fn stats(&self) -> Result<StorageStats> {
-        let backends_snapshot: Vec<(BackendType, Arc<dyn StorageBackend>)> = {
-            let backends = self.backends.read().await;
-            backends.iter().map(|(k, v)| (*k, v.clone())).collect()
-        };
+        let snapshot = self.backends_snapshot().await;
 
         let mut stats = StorageStats::default();
 
-        for (backend_type, backend) in backends_snapshot {
+        for (backend_type, backend) in &snapshot {
             if let Ok(backend_stats) = backend.stats().await {
-                stats.backends.insert(backend_type, backend_stats);
+                stats.backends.insert(*backend_type, backend_stats);
             }
         }
 

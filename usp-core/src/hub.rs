@@ -36,9 +36,9 @@ impl StorageHub {
         }
     }
 
-    /// Register a storage backend
-    pub async fn register_backend(&self, backend: Arc<dyn StorageBackend>) {
-        self.router.register_backend(backend).await;
+    /// Register a storage backend and return its type.
+    pub async fn register_backend(&self, backend: Arc<dyn StorageBackend>) -> BackendType {
+        self.router.register_backend(backend).await
     }
 
     /// Store data
@@ -61,11 +61,18 @@ impl StorageHub {
 
     /// Check if key exists in any backend
     pub async fn exists(&self, key: &str) -> Result<bool> {
-        let backends = self.router.backends().await;
-        let backends_guard = backends.read().await;
-        for backend in backends_guard.values() {
-            if backend.exists(key).await.unwrap_or(false) {
-                return Ok(true);
+        // Query all backends; a successful `true` from any backend short-circuits.
+        // We intentionally swallow per-backend errors so a single failing backend
+        // does not poison the overall `exists` result for the rest.
+        let backends_snapshot = self.router.backends_snapshot().await;
+        for (_, backend) in &backends_snapshot {
+            match backend.exists(key).await {
+                Ok(true) => return Ok(true),
+                Ok(false) => continue,
+                Err(err) => {
+                    tracing::warn!("exists() backend error: {}", err);
+                    continue;
+                }
             }
         }
         Ok(false)
@@ -74,6 +81,11 @@ impl StorageHub {
     /// Get storage statistics across all backends
     pub async fn stat(&self) -> Result<StorageStats> {
         self.router.stats().await
+    }
+
+    /// List all keys across all registered backends.
+    pub async fn list_keys(&self) -> Vec<String> {
+        self.router.list_keys().await
     }
 
     /// Pin data (ensure it won't be garbage collected)
