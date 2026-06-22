@@ -229,6 +229,15 @@ impl Config {
         Ok(config)
     }
 
+    /// Save configuration to a file
+    pub fn save_to(&self, path: &Path) -> crate::Result<()> {
+        let contents = toml::to_string_pretty(self)
+            .map_err(|e| crate::Error::Storage(format!("failed to serialize config: {}", e)))?;
+        fs::write(path, contents)
+            .map_err(|e| crate::Error::Storage(format!("failed to write config file: {}", e)))?;
+        Ok(())
+    }
+
     /// Apply environment variable overrides
     fn apply_env_overrides(self) -> Self {
         // Storage

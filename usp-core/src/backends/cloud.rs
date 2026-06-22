@@ -153,16 +153,7 @@ impl CloudS3Backend {
             host.to_string()
         };
 
-        // Mutate the URL to strip the query string for canonical URI.
-        let canonical_uri = {
-            let path = url.path();
-            // SigV4 requires path encoding; we assume S3 keys are safe.
-            if path.is_empty() {
-                "/".to_string()
-            } else {
-                path.to_string()
-            }
-        };
+        let canonical_uri = canonical_uri(url.path());
 
         // Aggregate all required headers.
         let mut all_headers: Vec<(String, String)> = vec![
@@ -189,14 +180,14 @@ impl CloudS3Backend {
             "{}\n{}\n{}\n{}\n{}\n{}",
             method.as_str(),
             canonical_uri,
-            url.query().unwrap_or(""),
+            &canonical_query_string(url),
             canonical_headers,
             signed_headers_list,
             payload_hash
         );
 
         // 2) String to sign.
-        let credential_scope = format!("{}/{}/s3aws4_request", date_stamp, cfg.region);
+        let credential_scope = format!("{}/{}/s3/aws4_request", date_stamp, cfg.region);
         let mut hasher = Sha256::new();
         hasher.update(canonical_request.as_bytes());
         let canonical_request_hash = hex::encode(hasher.finalize());
@@ -222,8 +213,9 @@ impl CloudS3Backend {
         );
 
         // 6) Compose the final HeaderMap.
+        // NOTE: `x-amz-date` is already in `all_headers` and will be added below.
+        // Do NOT add a separate `Date` header — it would be unsigned and cause auth failure.
         let mut headers = HeaderMap::new();
-        headers.insert(DATE, HeaderValue::from_str(&date_stamp).unwrap());
         for (k, v) in &all_headers {
             // Skip `host` (reqwest sets it from the URL).
             if k == "host" {
@@ -463,6 +455,70 @@ impl StorageBackend for CloudS3Backend {
             item_count: *self.inner.item_count.read().await,
         })
     }
+}
+
+/// URI-encode a string per AWS SigV4 spec (uppercase hex).
+/// Does NOT encode: A-Z, a-z, 0-9, '-', '.', '_', '~'
+/// Encodes everything else as %XX (uppercase hex).
+/// This matches the AWS SigV4 requirement for URI encoding.
+fn uri_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(b as char);
+            }
+            _ => {
+                write!(&mut out, "%{:02X}", b).unwrap();
+            }
+        }
+    }
+    out
+}
+
+/// Build the canonical URI from a URL path, per AWS SigV4 spec.
+/// Each path segment is URI-encoded independently; '/' separators are preserved.
+fn canonical_uri(path: &str) -> String {
+    if path.is_empty() {
+        return "/".to_string();
+    }
+    let mut result = String::with_capacity(path.len() + 2);
+    let mut first = true;
+    for segment in path.split('/') {
+        if first {
+            first = false;
+        } else {
+            result.push('/');
+        }
+        if !segment.is_empty() {
+            result.push_str(&uri_encode(segment));
+        }
+    }
+    // If the original path ended with '/', preserve it
+    if path.ends_with('/') && !result.ends_with('/') {
+        result.push('/');
+    }
+    result
+}
+
+/// Build the canonical query string per AWS SigV4 spec.
+/// Parses query parameters, sorts by key name, URI-encodes keys and values,
+/// and joins with '&'.
+fn canonical_query_string(url: &Url) -> String {
+    let query = url.query().unwrap_or("");
+    if query.is_empty() {
+        return String::new();
+    }
+    let mut pairs: Vec<(String, String)> = url
+        .query_pairs()
+        .map(|(k, v)| (uri_encode(&k), uri_encode(&v)))
+        .collect();
+    pairs.sort_by(|a, b| a.0.cmp(&b.0));
+        pairs
+        .into_iter()
+        .map(|(k, v)| format!("{}={}", k, v))
+        .collect::<Vec<_>>()
+        .join("&")
 }
 
 /// Compute HMAC-SHA256 and return the raw bytes.

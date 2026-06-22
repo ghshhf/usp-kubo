@@ -8,6 +8,33 @@ use crate::backends::{BackendConfig, StorageBackend};
 use crate::error::Result;
 use crate::types::*;
 
+/// Sanitize a user-supplied key to prevent path traversal.
+/// Rejects keys containing `..` or absolute path components.
+/// Also normalizes path separators to `/` and strips leading `/`.
+fn sanitize_key(key: &str) -> std::result::Result<PathBuf, std::io::Error> {
+    let trimmed = key.trim_start_matches('/');
+    let pb = PathBuf::from(trimmed);
+    // Reject any component that is ".." or "."
+    for component in pb.components() {
+        match component {
+            std::path::Component::ParentDir => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("key contains path traversal: {}", key),
+                ));
+            }
+            std::path::Component::RootDir => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    format!("key contains absolute path: {}", key),
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(pb)
+}
+
 /// Local filesystem storage backend
 #[derive(Debug, Clone)]
 pub struct LocalBackend {
@@ -70,7 +97,9 @@ impl StorageBackend for LocalBackend {
     }
 
     async fn put(&self, key: &str, value: Bytes) -> Result<StoreReceipt> {
-        let path = self.data_dir.join(key);
+        let safe_key = sanitize_key(key)
+            .map_err(|e| crate::Error::Storage(format!("invalid key: {}", e)))?;
+        let path = self.data_dir.join(safe_key);
         if let Some(parent) = path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
@@ -88,7 +117,9 @@ impl StorageBackend for LocalBackend {
     }
 
     async fn get(&self, key: &str) -> Result<Option<Bytes>> {
-        let path = self.data_dir.join(key);
+        let safe_key = sanitize_key(key)
+            .map_err(|e| crate::Error::Storage(format!("invalid key: {}", e)))?;
+        let path = self.data_dir.join(safe_key);
         match tokio::fs::read(&path).await {
             Ok(data) => Ok(Some(Bytes::from(data))),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -97,14 +128,24 @@ impl StorageBackend for LocalBackend {
     }
 
     async fn delete(&self, key: &str) -> Result<()> {
-        let path = self.data_dir.join(key);
-        tokio::fs::remove_file(&path).await?;
-        Ok(())
+        let safe_key = sanitize_key(key)
+            .map_err(|e| crate::Error::Storage(format!("invalid key: {}", e)))?;
+        let path = self.data_dir.join(safe_key);
+        // Idempotent delete: don't error if the file doesn't exist
+        match tokio::fs::remove_file(&path).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 
     async fn exists(&self, key: &str) -> Result<bool> {
-        let path = self.data_dir.join(key);
-        Ok(path.exists())
+        let safe_key = sanitize_key(key)
+            .map_err(|e| crate::Error::Storage(format!("invalid key: {}", e)))?;
+        let path = self.data_dir.join(safe_key);
+        tokio::fs::try_exists(&path)
+            .await
+            .map_err(|e| e.into())
     }
 
     async fn stats(&self) -> Result<BackendStats> {

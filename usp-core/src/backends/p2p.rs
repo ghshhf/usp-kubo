@@ -327,21 +327,23 @@ impl StorageBackend for P2PBackend {
         let stored = self.stored_data.read().await;
         let item_count = stored.len() as u64;
         let used_space: u64 = stored.values().map(|v| v.len() as u64).sum();
+        let peer_count = self.connected_peers.read().await.len() as u32;
         Ok(BackendStats {
             total_capacity: 0, // P2P has no fixed capacity
             used_space,
             available_space: u64::MAX,
             item_count,
+            peer_count,
         })
     }
 
     async fn list_keys(&self) -> Result<Vec<String>> {
         let stored = self.stored_data.read().await;
-        // Only return user-facing keys (non-CID keys).
-        // CID keys are identifiable by their "Qm" prefix.
+        // Only return user-facing keys (not CID keys).
+        // Use is_valid_cid to detect CID keys (both v0 and v1).
         let keys: Vec<String> = stored
             .keys()
-            .filter(|k| !k.starts_with("Qm"))
+            .filter(|k| !crate::utils::cid::is_valid_cid(k))
             .cloned()
             .collect();
         Ok(keys)

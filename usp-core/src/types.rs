@@ -100,6 +100,9 @@ pub struct BackendStats {
 
     /// Number of stored items
     pub item_count: u64,
+
+    /// Number of connected peers (P2P backends only, 0 for others)
+    pub peer_count: u32,
 }
 
 /// Storage statistics

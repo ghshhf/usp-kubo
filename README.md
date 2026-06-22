@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Rust](https://img.shields.io/badge/Rust-1.75%2B-orange.svg)](https://www.rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.76%2B-orange.svg)](https://www.rust-lang.org)
 [![License](https://img.shields.io/badge/License-MIT%2FApache--2.0-blue.svg)](./LICENSE)
 [![CI](https://github.com/ghshhf/usp-kubo/workflows/CI/badge.svg)](https://github.com/ghshhf/usp-kubo/actions)
 
@@ -230,7 +230,6 @@ use usp_core::policy::PlacementRule;
 use usp_core::types::StorageOptions;
 
 let rule = PlacementRule {
-    name: "small-files".into(),
     key_pattern: "cache/*".into(),
     backend_hint: Some(BackendType::Local),
     required_tags: [(("tier", "hot"))].into(),

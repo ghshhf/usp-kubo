@@ -25,7 +25,7 @@ impl BackendRouter {
         Self {
             backends: Arc::new(RwLock::new(HashMap::new())),
             policy_engine: Arc::new(PolicyEngine::new()),
-            cache: Arc::new(HybridCache::new(100_000_000)), // 100MB cache
+            cache: Arc::new(HybridCache::new(1_000)), // ~1000 entries, ~100MB assuming ~100KB/entry
             retry_config: RetryConfig::default(),
         }
     }
@@ -213,6 +213,10 @@ impl BackendRouter {
 
         for (backend_type, backend) in &snapshot {
             if let Ok(backend_stats) = backend.stats().await {
+                if *backend_type == BackendType::P2P {
+                    stats.p2p_peer_count = backend_stats.peer_count;
+                    stats.p2p_used_bytes = backend_stats.used_space;
+                }
                 stats.backends.insert(*backend_type, backend_stats);
             }
         }
