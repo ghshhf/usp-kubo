@@ -14,6 +14,40 @@ pub struct LocalBackend {
     pub data_dir: PathBuf,
 }
 
+/// Get the actual available disk space for the filesystem containing the data directory.
+/// Returns (total_bytes, available_bytes) for the filesystem.
+fn get_filesystem_stats(data_dir: &std::path::Path) -> std::io::Result<(u64, u64)> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        let path_bytes = data_dir.as_os_str().as_bytes();
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+
+        // statvfs expects a NUL-terminated C string
+        let mut c_path = path_bytes.to_vec();
+        c_path.push(0);
+
+        let result = unsafe { libc::statvfs(c_path.as_ptr() as *const _, &mut stat) };
+        if result != 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+
+        // bsize is the fragment size (block size) in bytes
+        let fragment_size: u64 = stat.f_bsize as _;
+        let total = stat.f_blocks * fragment_size;
+        let available = stat.f_bavail * fragment_size;
+
+        Ok((total, available))
+    }
+
+    #[cfg(not(unix))]
+    {
+        // On non-Unix systems, fall back to a large default value
+        let _ = data_dir;
+        Ok((1_000_000_000_000_u64, 1_000_000_000_000_u64))
+    }
+}
+
 impl LocalBackend {
     pub fn new(data_dir: PathBuf) -> Self {
         Self { data_dir }
@@ -97,24 +131,9 @@ impl StorageBackend for LocalBackend {
             Ok(())
         }
 
-        // Get available disk space using statvfs on Unix or default fallback
-        let available = if cfg!(unix) {
-            std::fs::metadata(&self.data_dir)
-                .and_then(|m| {
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::MetadataExt;
-                        Ok::<u64, std::io::Error>(m.blocks() * 512) // 512-byte blocks
-                    }
-                    #[cfg(not(unix))]
-                    {
-                        Ok(1_000_000_000_000_u64)
-                    }
-                })
-                .unwrap_or(1_000_000_000_000_u64)
-        } else {
-            1_000_000_000_000_u64
-        };
+        // Get filesystem-level disk space statistics (total capacity + available space)
+        let (total_capacity, available_space) = get_filesystem_stats(&self.data_dir)
+            .unwrap_or((1_000_000_000_000_u64, 1_000_000_000_000_u64));
 
         let total = AtomicU64::new(0);
         let count = AtomicU64::new(0);
@@ -123,9 +142,9 @@ impl StorageBackend for LocalBackend {
         let item_count = count.load(Ordering::Relaxed);
 
         Ok(BackendStats {
-            total_capacity: available + used_space,
+            total_capacity,
             used_space,
-            available_space: available,
+            available_space,
             item_count,
         })
     }

@@ -15,12 +15,16 @@ futures.workspace = true
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+toml = "0.8"
 multihash.workspace = true
 hex.workspace = true
 sha2.workspace = true
 glob.workspace = true
 chrono.workspace = true
 lru.workspace = true
+reqwest.workspace = true
+hmac.workspace = true
+url.workspace = true
 
 # P2P features
 libp2p = { workspace = true, features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns"] }
@@ -31,3 +35,6 @@ rand = "0.8"
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -3,15 +3,16 @@
 //! A meta-storage system that unifies multiple storage backends
 //! (local, P2P, cloud, decentralized) under a single API.
 
-pub mod error;
-pub mod types;
-pub mod hub;
-pub mod router;
-pub mod policy;
 pub mod backends;
+pub mod config;
+pub mod error;
+pub mod hub;
+pub mod policy;
+pub mod router;
+pub mod types;
 pub mod utils;
 
 pub use error::{Error, Result};
-pub use types::*;
 pub use hub::StorageHub;
-pub use utils::{RetryConfig, with_retry};
+pub use types::*;
+pub use utils::{with_retry, RetryConfig};

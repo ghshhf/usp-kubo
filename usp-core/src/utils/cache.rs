@@ -2,6 +2,7 @@
 
 use bytes::Bytes;
 use lru::LruCache;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -13,9 +14,10 @@ pub struct HybridCache {
 }
 
 impl HybridCache {
-    pub fn new(_max_size: usize) -> Self {
+    pub fn new(max_size: usize) -> Self {
+        let capacity = NonZeroUsize::new(max_size).unwrap_or(NonZeroUsize::MIN);
         Self {
-            cache: Arc::new(RwLock::new(LruCache::unbounded())),
+            cache: Arc::new(RwLock::new(LruCache::new(capacity))),
         }
     }
 

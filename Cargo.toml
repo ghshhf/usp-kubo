@@ -2,7 +2,13 @@
 resolver = "2"
 members = [
     "usp-core",
+    "usp-cli",
 ]
+
+[workspace.metadata.clippy]
+# Clippy lint thresholds
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 10
 
 [workspace.package]
 version = "0.1.0"
@@ -22,6 +28,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+clap = { version = "4.5", features = ["derive"] }
 # cid removed due to yanked dependency
 # cid = { version = "0.10", features = ["serde"] }
 multihash = "0.19"
@@ -35,4 +42,9 @@ sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 
 # P2P
-libp2p = { version = "0.53", features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns"] }
+libp2p = { version = "0.53", features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns", "kad", "identify", "macros", "tokio"] }
+
+# S3 client (HTTP + SigV4)
+reqwest = { version = "0.11", features = ["rustls-tls", "stream", "multipart", "json"] }
+hmac = "0.12"
+url = "2.5"

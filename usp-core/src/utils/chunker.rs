@@ -15,7 +15,7 @@ impl FixedSizeChunker {
     /// Split data into chunks
     pub fn chunk(&self, data: &[u8]) -> Vec<Bytes> {
         data.chunks(self.chunk_size)
-            .map(|chunk| Bytes::copy_from_slice(chunk))
+            .map(Bytes::copy_from_slice)
             .collect()
     }
 

@@ -1,0 +1,1760 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USP - Unified Storage Platform 文档</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0e;
+            --bg-secondary: #0f0f14;
+            --bg-tertiary: #16161e;
+            --bg-card: #1a1a22;
+            --bg-hover: #222230;
+            --border: #2a2a38;
+            --border-bright: #3a3a4a;
+            --text-primary: #e8e8f0;
+            --text-secondary: #9898a8;
+            --text-muted: #5a5a6a;
+            --accent: #00e5b8;
+            --accent-dim: #00c4a0;
+            --accent-glow: rgba(0, 229, 184, 0.12);
+            --accent-glow-strong: rgba(0, 229, 184, 0.25);
+            --cyan: #00d4f0;
+            --cyan-dim: #00b8d4;
+            --orange: #ff9f5a;
+            --orange-dim: #e8884d;
+            --purple: #b78bfa;
+            --purple-dim: #a070f0;
+            --green: #4ade80;
+            --red: #f87171;
+            --yellow: #fbbf24;
+            --code-bg: #08080c;
+            --gradient-accent: linear-gradient(135deg, var(--accent), var(--cyan));
+            --gradient-orange: linear-gradient(135deg, var(--orange), #ff7b2e);
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+            --shadow-glow: 0 0 40px var(--accent-glow);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.7;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-bright);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-muted);
+        }
+
+        /* Layout */
+        .layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            overflow-y: auto;
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            position: sticky;
+            top: 0;
+            background: var(--bg-secondary);
+            z-index: 10;
+        }
+
+        .sidebar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+
+        .sidebar-logo {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-accent);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: var(--bg-primary);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .sidebar-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .sidebar-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .sidebar-nav {
+            padding: 1rem 0;
+        }
+
+        .nav-group {
+            margin-bottom: 0.5rem;
+        }
+
+        .nav-group-title {
+            padding: 0.5rem 1.5rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.6rem 1.5rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border-left: 2px solid transparent;
+        }
+
+        .nav-item:hover {
+            color: var(--text-primary);
+            background: var(--bg-hover);
+        }
+
+        .nav-item.active {
+            color: var(--accent);
+            background: var(--accent-glow);
+            border-left-color: var(--accent);
+        }
+
+        .nav-icon {
+            width: 20px;
+            text-align: center;
+            font-size: 1rem;
+        }
+
+        .nav-badge {
+            margin-left: auto;
+            background: var(--accent-glow);
+            color: var(--accent);
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Main Content */
+        .main {
+            flex: 1;
+            margin-left: 280px;
+            min-height: 100vh;
+        }
+
+        /* Topbar */
+        .topbar {
+            position: sticky;
+            top: 0;
+            background: rgba(10, 10, 14, 0.9);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0.75rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 50;
+        }
+
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .menu-toggle {
+            display: none;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem;
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 1.2rem;
+        }
+
+        .search-box {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            width: 280px;
+            transition: all 0.2s ease;
+        }
+
+        .search-box:focus-within {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        .search-box input {
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            width: 100%;
+            font-family: inherit;
+        }
+
+        .search-box input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .search-box span {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .topbar-right {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .topbar-link {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: color 0.2s;
+        }
+
+        .topbar-link:hover {
+            color: var(--text-primary);
+        }
+
+        .topbar-badge {
+            background: var(--accent);
+            color: var(--bg-primary);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Content Area */
+        .content {
+            padding: 2rem 3rem 4rem;
+            max-width: 1100px;
+        }
+
+        /* Hero */
+        .hero {
+            padding: 4rem 0 3rem;
+            text-align: center;
+            position: relative;
+        }
+
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120%;
+            height: 100%;
+            background:
+                radial-gradient(ellipse 60% 50% at 50% 0%, var(--accent-glow-strong), transparent),
+                radial-gradient(ellipse 40% 30% at 80% 30%, rgba(0, 212, 240, 0.08), transparent),
+                radial-gradient(ellipse 40% 30% at 20% 70%, rgba(183, 139, 250, 0.06), transparent);
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            padding: 0.4rem 1rem;
+            border-radius: 100px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 1.5rem;
+            animation: fadeInUp 0.5s ease-out;
+        }
+
+        .hero-badge-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--accent);
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.2); }
+        }
+
+        .hero h1 {
+            font-size: clamp(2.5rem, 6vw, 4rem);
+            font-weight: 700;
+            letter-spacing: -0.04em;
+            line-height: 1.1;
+            margin-bottom: 1.25rem;
+            animation: fadeInUp 0.5s ease-out 0.1s both;
+        }
+
+        .hero h1 .accent {
+            background: var(--gradient-accent);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .hero-subtitle {
+            font-size: 1.15rem;
+            color: var(--text-secondary);
+            max-width: 650px;
+            margin: 0 auto 2rem;
+            font-weight: 300;
+            animation: fadeInUp 0.5s ease-out 0.2s both;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            animation: fadeInUp 0.5s ease-out 0.3s both;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(15px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            cursor: pointer;
+            border: none;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            background: var(--gradient-accent);
+            color: var(--bg-primary);
+            box-shadow: var(--shadow-md), 0 0 30px var(--accent-glow);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg), 0 0 50px var(--accent-glow-strong);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-bright);
+        }
+
+        .btn-orange {
+            background: var(--gradient-orange);
+            color: var(--bg-primary);
+        }
+
+        /* Section */
+        .section {
+            margin-bottom: 4rem;
+        }
+
+        .section-header {
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--accent);
+            margin-bottom: 0.5rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .section-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            margin-bottom: 0.5rem;
+        }
+
+        .section-desc {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        /* Feature Cards */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.25rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.25s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--gradient-accent);
+            opacity: 0;
+            transition: opacity 0.25s ease;
+        }
+
+        .feature-card:hover {
+            border-color: var(--border-bright);
+            transform: translateY(-3px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .feature-card:hover::before {
+            opacity: 1;
+        }
+
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            background: var(--accent-glow);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-title {
+            font-size: 1.05rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .feature-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        /* Architecture */
+        .arch-container {
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 2rem;
+            border: 1px solid var(--border);
+            overflow-x: auto;
+        }
+
+        .arch-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            min-width: 700px;
+        }
+
+        .arch-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1rem;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+
+        .arch-box:hover {
+            border-color: var(--accent);
+            transform: translateY(-2px);
+        }
+
+        .arch-box-main {
+            grid-column: span 2;
+            background: linear-gradient(135deg, var(--bg-card), var(--bg-tertiary));
+            border-color: var(--accent);
+        }
+
+        .arch-box-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 0.35rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .arch-box-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            margin-bottom: 0.2rem;
+        }
+
+        .arch-box-desc {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+        }
+
+        .arch-connector {
+            display: flex;
+            justify-content: center;
+            padding: 0.5rem 0;
+            color: var(--text-muted);
+            font-size: 1.2rem;
+        }
+
+        /* Backends */
+        .backends-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1rem;
+        }
+
+        .backend-card {
+            display: flex;
+            gap: 1.25rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            transition: all 0.2s ease;
+        }
+
+        .backend-card:hover {
+            border-color: var(--border-bright);
+        }
+
+        .backend-icon {
+            width: 52px;
+            height: 52px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            flex-shrink: 0;
+        }
+
+        .backend-icon.local { background: var(--accent-glow); }
+        .backend-icon.p2p { background: rgba(0, 212, 240, 0.12); }
+        .backend-icon.cloud { background: rgba(255, 159, 90, 0.12); }
+        .backend-icon.decentralized { background: rgba(183, 139, 250, 0.12); }
+
+        .backend-info {
+            flex: 1;
+        }
+
+        .backend-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .backend-name {
+            font-size: 1.05rem;
+            font-weight: 600;
+        }
+
+        .backend-tag {
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .backend-tag.local { color: var(--accent); background: var(--accent-glow); }
+        .backend-tag.p2p { color: var(--cyan); background: rgba(0, 212, 240, 0.12); }
+        .backend-tag.cloud { color: var(--orange); background: rgba(255, 159, 90, 0.12); }
+        .backend-tag.decentralized { color: var(--purple); background: rgba(183, 139, 250, 0.12); }
+
+        .backend-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+
+        /* Code Block */
+        .code-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+            align-items: start;
+        }
+
+        @media (max-width: 900px) {
+            .code-container { grid-template-columns: 1fr; }
+        }
+
+        .code-block {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .code-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .code-dots {
+            display: flex;
+            gap: 5px;
+        }
+
+        .code-dot {
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+        }
+
+        .code-dot:nth-child(1) { background: #ff5f56; }
+        .code-dot:nth-child(2) { background: #ffbd2e; }
+        .code-dot:nth-child(3) { background: #27c93f; }
+
+        .code-filename {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .code-content {
+            padding: 1.25rem;
+            overflow-x: auto;
+        }
+
+        .code-content pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.7;
+            color: var(--text-primary);
+        }
+
+        .code-content .comment { color: var(--text-muted); font-style: italic; }
+        .code-content .keyword { color: var(--purple); }
+        .code-content .string { color: var(--accent); }
+        .code-content .function { color: var(--cyan); }
+        .code-content .macro { color: var(--orange); }
+        .code-content .type { color: var(--orange); }
+        .code-content .number { color: var(--green); }
+        .code-content .method { color: var(--cyan-dim); }
+
+        .code-desc {
+            padding: 1.25rem;
+        }
+
+        .code-desc h3 {
+            font-size: 1.1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .code-desc p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 1rem;
+        }
+
+        /* CLI Block */
+        .cli-block {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            overflow-x: auto;
+        }
+
+        .cli-line {
+            display: flex;
+            gap: 1rem;
+            padding: 0.25rem 0;
+        }
+
+        .cli-prompt {
+            color: var(--accent);
+            user-select: none;
+        }
+
+        .cli-cmd {
+            color: var(--text-primary);
+        }
+
+        .cli-comment {
+            color: var(--text-muted);
+        }
+
+        /* Config Table */
+        .config-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+        }
+
+        .config-table th,
+        .config-table td {
+            padding: 0.875rem 1.25rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .config-table th {
+            background: var(--bg-secondary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+        }
+
+        .config-table tr:last-child td {
+            border-bottom: none;
+        }
+
+        .config-table tr:hover td {
+            background: var(--bg-hover);
+        }
+
+        .config-table td:first-child {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            color: var(--accent);
+        }
+
+        .config-table td:nth-child(2) {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        .config-table td:last-child {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        /* Install Steps */
+        .install-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .install-step {
+            display: flex;
+            gap: 1rem;
+            align-items: flex-start;
+        }
+
+        .step-number {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-glow);
+            border: 1px solid var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--accent);
+            flex-shrink: 0;
+        }
+
+        .step-content {
+            flex: 1;
+            padding-top: 0.25rem;
+        }
+
+        .step-content h4 {
+            font-size: 1rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .step-content p {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0.25rem;
+            background: var(--bg-secondary);
+            padding: 0.25rem;
+            border-radius: 8px;
+            width: fit-content;
+            margin-bottom: 1.5rem;
+        }
+
+        .tab {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            background: none;
+            font-family: inherit;
+        }
+
+        .tab:hover {
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            background: var(--bg-card);
+            color: var(--accent);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Roadmap */
+        .roadmap-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.25rem;
+        }
+
+        @media (max-width: 900px) {
+            .roadmap-grid { grid-template-columns: 1fr; }
+        }
+
+        .roadmap-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+        }
+
+        .roadmap-card h4 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .roadmap-tag {
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.65rem;
+            font-weight: 600;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .roadmap-tag.short { background: var(--accent-glow); color: var(--accent); }
+        .roadmap-tag.mid { background: rgba(0, 212, 240, 0.12); color: var(--cyan); }
+        .roadmap-tag.long { background: rgba(183, 139, 250, 0.12); color: var(--purple); }
+
+        .roadmap-list {
+            list-style: none;
+        }
+
+        .roadmap-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+            padding: 0.4rem 0;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        .roadmap-list li::before {
+            content: '→';
+            color: var(--accent);
+            font-weight: 600;
+        }
+
+        /* Changelog */
+        .changelog {
+            border-left: 2px solid var(--border);
+            padding-left: 1.5rem;
+        }
+
+        .changelog-item {
+            position: relative;
+            padding-bottom: 2rem;
+        }
+
+        .changelog-item::before {
+            content: '';
+            position: absolute;
+            left: -1.65rem;
+            top: 0.35rem;
+            width: 10px;
+            height: 10px;
+            background: var(--accent);
+            border-radius: 50%;
+        }
+
+        .changelog-version {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--accent);
+            margin-bottom: 0.25rem;
+        }
+
+        .changelog-date {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        .changelog-desc {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Footer */
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 2rem 3rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }
+
+        footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        footer a:hover {
+            text-decoration: underline;
+        }
+
+        /* Overlay */
+        .sidebar-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 99;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            .sidebar-overlay.open {
+                display: block;
+            }
+            .main {
+                margin-left: 0;
+            }
+            .menu-toggle {
+                display: flex;
+            }
+            .search-box {
+                width: 200px;
+            }
+            .content {
+                padding: 1.5rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .topbar {
+                padding: 0.75rem 1rem;
+            }
+            .search-box {
+                display: none;
+            }
+            .topbar-link span {
+                display: none;
+            }
+            .hero h1 {
+                font-size: 2rem;
+            }
+            .roadmap-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar Overlay -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <div class="layout">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <a href="#" class="sidebar-brand">
+                    <div class="sidebar-logo">U</div>
+                    <div>
+                        <div class="sidebar-title">USP</div>
+                        <div class="sidebar-subtitle">Unified Storage Platform</div>
+                    </div>
+                </a>
+            </div>
+            <nav class="sidebar-nav">
+                <div class="nav-group">
+                    <div class="nav-group-title">快速导航</div>
+                    <a href="#features" class="nav-item active">
+                        <span class="nav-icon">✨</span>
+                        特性
+                    </a>
+                    <a href="#install" class="nav-item">
+                        <span class="nav-icon">🚀</span>
+                        安装
+                    </a>
+                    <a href="#quickstart" class="nav-item">
+                        <span class="nav-icon">⚡</span>
+                        快速开始
+                    </a>
+                </div>
+                <div class="nav-group">
+                    <div class="nav-group-title">核心概念</div>
+                    <a href="#architecture" class="nav-item">
+                        <span class="nav-icon">🏗️</span>
+                        架构
+                    </a>
+                    <a href="#backends" class="nav-item">
+                        <span class="nav-icon">💾</span>
+                        存储后端
+                    </a>
+                    <a href="#config" class="nav-item">
+                        <span class="nav-icon">⚙️</span>
+                        配置
+                    </a>
+                </div>
+                <div class="nav-group">
+                    <div class="nav-group-title">开发</div>
+                    <a href="#api" class="nav-item">
+                        <span class="nav-icon">📚</span>
+                        API 示例
+                    </a>
+                    <a href="#cli" class="nav-item">
+                        <span class="nav-icon">⌨️</span>
+                        CLI 用法
+                    </a>
+                    <a href="#roadmap" class="nav-item">
+                        <span class="nav-icon">🗺️</span>
+                        路线图
+                    </a>
+                </div>
+                <div class="nav-group">
+                    <div class="nav-group-title">其他</div>
+                    <a href="#changelog" class="nav-item">
+                        <span class="nav-icon">📋</span>
+                        更新日志
+                    </a>
+                    <a href="https://github.com/ghshhf/usp-kubo" class="nav-item" target="_blank">
+                        <span class="nav-icon">⭐</span>
+                        GitHub
+                        <span class="nav-badge">v0.1</span>
+                    </a>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- Main -->
+        <main class="main">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="menu-toggle" id="menuToggle">☰</button>
+                    <div class="search-box">
+                        <span>🔍</span>
+                        <input type="text" placeholder="搜索文档..." id="searchInput">
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <a href="https://github.com/ghshhf/usp-kubo" class="topbar-link" target="_blank">
+                        <span>📦</span>
+                        <span> crates.io</span>
+                    </a>
+                    <a href="https://github.com/ghshhf/usp-kubo" class="topbar-link" target="_blank">
+                        <span>⭐</span>
+                        <span> GitHub</span>
+                    </a>
+                    <span class="topbar-badge">v0.1.0</span>
+                </div>
+            </header>
+
+            <!-- Content -->
+            <div class="content">
+                <!-- Hero -->
+                <section class="hero" id="hero">
+                    <div class="hero-badge">
+                        <span class="hero-badge-dot"></span>
+                        Rust 编写 · 多后端统一存储
+                    </div>
+                    <h1>统一存储<br><span class="accent">无限可能</span></h1>
+                    <p class="hero-subtitle">
+                        通过单一 API 将数据存储到本地文件系统、P2P 网络、云存储或 IPFS。
+                        策略路由、离线降级、生产就绪。
+                    </p>
+                    <div class="hero-actions">
+                        <a href="#quickstart" class="btn btn-primary">快速开始 →</a>
+                        <a href="https://github.com/ghshhf/usp-kubo" class="btn btn-secondary" target="_blank">
+                            查看 GitHub
+                        </a>
+                    </div>
+                </section>
+
+                <!-- Features -->
+                <section class="section" id="features">
+                    <div class="section-header">
+                        <div class="section-label">核心特性</div>
+                        <h2 class="section-title">为什么选择 USP？</h2>
+                        <p class="section-desc">专为现代应用设计的多后端存储解决方案</p>
+                    </div>
+                    <div class="features-grid">
+                        <div class="feature-card">
+                            <div class="feature-icon">🔄</div>
+                            <h3 class="feature-title">多后端支持</h3>
+                            <p class="feature-desc">
+                                同时支持 Local、P2P (Kademlia DHT)、S3 兼容存储和 IPFS。
+                                根据数据特征自动选择最优存储位置。
+                            </p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🎯</div>
+                            <h3 class="feature-title">策略路由</h3>
+                            <p class="feature-desc">
+                                基于键名模式、文件大小、标签自动路由。
+                                小文件走本地，大文件上云，热数据用 P2P 缓存。
+                            </p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🔌</div>
+                            <h3 class="feature-title">离线降级</h3>
+                            <p class="feature-desc">
+                                去中心化存储支持离线模式。IPFS 不可用时自动切换到本地缓存，
+                                恢复连接后同步到网络。
+                            </p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">🛡️</div>
+                            <h3 class="feature-title">S3 完整兼容</h3>
+                            <p class="feature-desc">
+                                手写 AWS SigV4 签名，支持所有 S3 兼容服务。
+                                可对接 MinIO、Cloudflare R2、Ceph 等。
+                            </p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">⚡</div>
+                            <h3 class="feature-title">Tokio 异步</h3>
+                            <p class="feature-desc">
+                                纯异步架构，基于 Tokio 运行时。
+                                高性能、低延迟，充分利用现代硬件。
+                            </p>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feature-icon">📝</div>
+                            <h3 class="feature-title">灵活配置</h3>
+                            <p class="feature-desc">
+                                支持 .usp.toml 配置文件、环境变量覆盖、
+                                运行时动态调整。
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Install -->
+                <section class="section" id="install">
+                    <div class="section-header">
+                        <div class="section-label">安装</div>
+                        <h2 class="section-title">开始使用</h2>
+                        <p class="section-desc">从源码编译或使用 cargo 安装</p>
+                    </div>
+                    <div class="install-steps">
+                        <div class="install-step">
+                            <div class="step-number">1</div>
+                            <div class="step-content">
+                                <h4>克隆项目</h4>
+                                <p>从 GitHub 获取最新源码</p>
+                            </div>
+                        </div>
+                        <div class="install-step">
+                            <div class="step-number">2</div>
+                            <div class="step-content">
+                                <h4>编译项目</h4>
+                                <p>使用 cargo build --release 编译</p>
+                            </div>
+                        </div>
+                        <div class="install-step">
+                            <div class="step-number">3</div>
+                            <div class="step-content">
+                                <h4>开始使用</h4>
+                                <p>运行 ./target/release/usp init 初始化</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="cli-block" style="margin-top: 1.5rem;">
+                        <div class="cli-line">
+                            <span class="cli-prompt">$</span>
+                            <span class="cli-cmd">git clone https://github.com/ghshhf/usp-kubo.git</span>
+                        </div>
+                        <div class="cli-line">
+                            <span class="cli-prompt">$</span>
+                            <span class="cli-cmd">cd usp-kubo && cargo build --release</span>
+                        </div>
+                        <div class="cli-line">
+                            <span class="cli-prompt">$</span>
+                            <span class="cli-cmd">./target/release/usp init</span>
+                            <span class="cli-comment"># 初始化存储</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Architecture -->
+                <section class="section" id="architecture">
+                    <div class="section-header">
+                        <div class="section-label">系统架构</div>
+                        <h2 class="section-title">模块化设计</h2>
+                        <p class="section-desc">每个组件职责明确，便于扩展和维护</p>
+                    </div>
+                    <div class="arch-container">
+                        <div class="arch-grid">
+                            <div class="arch-box arch-box-main">
+                                <div class="arch-box-title">Core</div>
+                                <div class="arch-box-name">StorageHub</div>
+                                <div class="arch-box-desc">主协调器 · 后端注册 · 请求路由</div>
+                            </div>
+                            <div class="arch-box">
+                                <div class="arch-box-title">Utils</div>
+                                <div class="arch-box-name">PolicyEngine</div>
+                                <div class="arch-box-desc">规则匹配</div>
+                            </div>
+                            <div class="arch-box">
+                                <div class="arch-box-title">Utils</div>
+                                <div class="arch-box-name">BackendRouter</div>
+                                <div class="arch-box-desc">路径选择</div>
+                            </div>
+                            <div class="arch-box">
+                                <div class="arch-box-title">Backend</div>
+                                <div class="arch-box-name">LocalBackend</div>
+                                <div class="arch-box-desc">文件系统</div>
+                            </div>
+                            <div class="arch-box">
+                                <div class="arch-box-title">Backend</div>
+                                <div class="arch-box-name">P2PBackend</div>
+                                <div class="arch-box-desc">libp2p DHT</div>
+                            </div>
+                            <div class="arch-box">
+                                <div class="arch-box-title">Backend</div>
+                                <div class="arch-box-name">CloudS3</div>
+                                <div class="arch-box-desc">AWS S3</div>
+                            </div>
+                            <div class="arch-box">
+                                <div class="arch-box-title">Backend</div>
+                                <div class="arch-box-name">Decentralized</div>
+                                <div class="arch-box-desc">IPFS</div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Backends -->
+                <section class="section" id="backends">
+                    <div class="section-header">
+                        <div class="section-label">存储后端</div>
+                        <h2 class="section-title">四大存储引擎</h2>
+                        <p class="section-desc">每种后端针对不同场景优化，按需组合</p>
+                    </div>
+                    <div class="backends-grid">
+                        <div class="backend-card">
+                            <div class="backend-icon local">💾</div>
+                            <div class="backend-info">
+                                <div class="backend-header">
+                                    <h3 class="backend-name">LocalBackend</h3>
+                                    <span class="backend-tag local">Local</span>
+                                </div>
+                                <p class="backend-desc">
+                                    本地文件系统存储，使用 libc::statvfs 获取真实磁盘空间。
+                                    支持目录递归遍历，适合快速原型和本地开发。
+                                </p>
+                            </div>
+                        </div>
+                        <div class="backend-card">
+                            <div class="backend-icon p2p">🌐</div>
+                            <div class="backend-info">
+                                <div class="backend-header">
+                                    <h3 class="backend-name">P2PBackend</h3>
+                                    <span class="backend-tag p2p">P2P</span>
+                                </div>
+                                <p class="backend-desc">
+                                    基于 libp2p 0.53 Kademlia DHT，分布式、去中心化。
+                                    内容通过 CID 寻址，节点自动发现和路由。
+                                </p>
+                            </div>
+                        </div>
+                        <div class="backend-card">
+                            <div class="backend-icon cloud">☁️</div>
+                            <div class="backend-info">
+                                <div class="backend-header">
+                                    <h3 class="backend-name">CloudS3Backend</h3>
+                                    <span class="backend-tag cloud">Cloud</span>
+                                </div>
+                                <p class="backend-desc">
+                                    AWS S3 / MinIO 兼容存储。完整 SigV4 签名实现，
+                                    支持自定义端点和路径前缀。init 时验证连接。
+                                </p>
+                            </div>
+                        </div>
+                        <div class="backend-card">
+                            <div class="backend-icon decentralized">🔗</div>
+                            <div class="backend-info">
+                                <div class="backend-header">
+                                    <h3 class="backend-name">DecentralizedStorage</h3>
+                                    <span class="backend-tag decentralized">IPFS</span>
+                                </div>
+                                <p class="backend-desc">
+                                    IPFS HTTP API 集成。CID 映射持久化到 JSON。
+                                    离线时本地缓存，联网后自动同步到 IPFS 网络。
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Quickstart / API -->
+                <section class="section" id="quickstart">
+                    <div class="section-header">
+                        <div class="section-label">快速开始</div>
+                        <h2 class="section-title">简洁的 API</h2>
+                        <p class="section-desc">三行代码开始使用任意存储后端</p>
+                    </div>
+                    <div class="code-container">
+                        <div class="code-block">
+                            <div class="code-header">
+                                <div class="code-dots">
+                                    <span class="code-dot"></span>
+                                    <span class="code-dot"></span>
+                                    <span class="code-dot"></span>
+                                </div>
+                                <span class="code-filename">main.rs</span>
+                            </div>
+                            <div class="code-content">
+<pre><span class="keyword">use</span> usp_core::{StorageHub, StorageOptions, BackendConfig};
+<span class="keyword">use</span> usp_core::backends::{LocalBackend, StorageBackend};
+<span class="keyword">use</span> std::sync::Arc;
+<span class="keyword">use</span> bytes::Bytes;
+
+<span class="keyword">#[tokio::main]</span>
+<span class="keyword">async fn</span> <span class="function">main</span>() <span class="keyword">-></span> <span class="type">anyhow::Result</span><()> {
+    <span class="comment">// 创建存储 Hub</span>
+    <span class="keyword">let</span> hub = StorageHub::<span class="macro">new</span>();
+
+    <span class="comment">// 注册本地后端</span>
+    <span class="keyword">let</span> local = Arc::<span class="macro">new</span>(LocalBackend::<span class="macro">new</span>(<span class="string">"./data"</span>.into()));
+    local.init(BackendConfig::Default).<span class="keyword">await</span>?;
+    hub.register_backend(local).<span class="keyword">await</span>;
+
+    <span class="comment">// 存储数据</span>
+    <span class="keyword">let</span> receipt = hub.put(
+        <span class="string">"my-key"</span>,
+        Bytes::<span class="macro">from</span>(<span class="string">"Hello, USP!"</span>),
+        StorageOptions::default(),
+    ).<span class="keyword">await</span>?;<span class="keyword">
+
+    // 读取数据
+    if</span> Some(data) = hub.get(<span class="string">"my-key"</span>).<span class="keyword">await</span>? {
+        <span class="macro">println!</span>(<span class="string">"Retrieved: {}"</span>, String::<span class="macro">from_utf8_lossy</span>(&data));
+    }
+
+    <span class="macro">Ok</span>(())
+}</pre>
+                            </div>
+                        </div>
+                        <div class="code-desc">
+                            <h3>Rust API</h3>
+                            <p>
+                                <code>StorageHub</code> 是所有存储操作的主入口。
+                                注册后端后，通过统一的 <code>put</code> / <code>get</code> / <code>delete</code> 接口操作数据。
+                            </p>
+                            <h3>策略路由</h3>
+                            <p>
+                                根据键名模式、文件大小、标签自动选择最优后端。
+                                小文件走本地，大文件上云，热数据用 P2P 缓存。
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- CLI -->
+                <section class="section" id="cli">
+                    <div class="section-header">
+                        <div class="section-label">命令行工具</div>
+                        <h2 class="section-title">CLI 用法</h2>
+                        <p class="section-desc">简洁的命令行界面管理存储</p>
+                    </div>
+                    <div class="tabs">
+                        <button class="tab active" data-tab="init">初始化</button>
+                        <button class="tab" data-tab="store">存储</button>
+                        <button class="tab" data-tab="manage">管理</button>
+                    </div>
+                    <div class="tab-content active" id="tab-init">
+                        <div class="cli-block">
+                            <div class="cli-line"><span class="cli-prompt">#</span> <span class="cli-comment">初始化存储（默认本地后端）</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp init</span></div>
+                            <div class="cli-line" style="margin-top: 1rem;"><span class="cli-prompt">#</span> <span class="cli-comment">指定后端类型</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp init --backend p2p</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp init --backend s3</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp init --backend decentralized</span></div>
+                        </div>
+                    </div>
+                    <div class="tab-content" id="tab-store">
+                        <div class="cli-block">
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp store mykey /path/to/file.txt</span> <span class="cli-comment"># 存储文件</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp get mykey /output.txt</span> <span class="cli-comment"># 读取文件</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp delete mykey</span> <span class="cli-comment"># 删除文件</span></div>
+                        </div>
+                    </div>
+                    <div class="tab-content" id="tab-manage">
+                        <div class="cli-block">
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp list</span> <span class="cli-comment"># 列出所有键</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp stats</span> <span class="cli-comment"># 查看存储统计</span></div>
+                            <div class="cli-line"><span class="cli-prompt">$</span> <span class="cli-cmd">./usp backend --info</span> <span class="cli-comment"># 查看后端信息</span></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Config -->
+                <section class="section" id="config">
+                    <div class="section-header">
+                        <div class="section-label">配置</div>
+                        <h2 class="section-title">灵活配置</h2>
+                        <p class="section-desc">支持 .usp.toml 配置文件和环境变量覆盖</p>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="config-table">
+                            <thead>
+                                <tr>
+                                    <th>环境变量</th>
+                                    <th>描述</th>
+                                    <th>默认值</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>USP_DATA_DIR</td>
+                                    <td>数据存储目录</td>
+                                    <td>.usp-data</td>
+                                </tr>
+                                <tr>
+                                    <td>USP_S3_ENDPOINT</td>
+                                    <td>S3 API 端点</td>
+                                    <td>—</td>
+                                </tr>
+                                <tr>
+                                    <td>USP_S3_REGION</td>
+                                    <td>AWS 区域</td>
+                                    <td>us-east-1</td>
+                                </tr>
+                                <tr>
+                                    <td>USP_S3_BUCKET</td>
+                                    <td>S3 桶名称</td>
+                                    <td>—</td>
+                                </tr>
+                                <tr>
+                                    <td>USP_S3_ACCESS_KEY</td>
+                                    <td>访问密钥 ID</td>
+                                    <td>—</td>
+                                </tr>
+                                <tr>
+                                    <td>USP_S3_SECRET_KEY</td>
+                                    <td>秘密访问密钥</td>
+                                    <td>—</td>
+                                </tr>
+                                <tr>
+                                    <td>USP_IPFS_GATEWAY_URL</td>
+                                    <td>IPFS Gateway 地址</td>
+                                    <td>https://ipfs.io/ipfs/</td>
+                                </tr>
+                                <tr>
+                                    <td>USP_IPFS_API_URL</td>
+                                    <td>IPFS API 地址</td>
+                                    <td>http://127.0.0.1:5001</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Roadmap -->
+                <section class="section" id="roadmap">
+                    <div class="section-header">
+                        <div class="section-label">路线图</div>
+                        <h2 class="section-title">未来规划</h2>
+                        <p class="section-desc">持续迭代，打造生产级存储解决方案</p>
+                    </div>
+                    <div class="roadmap-grid">
+                        <div class="roadmap-card">
+                            <h4>
+                                <span>短期</span>
+                                <span class="roadmap-tag short">v0.2</span>
+                            </h4>
+                            <ul class="roadmap-list">
+                                <li>StorageHub 持久化状态</li>
+                                <li>健康检查端点</li>
+                                <li>完善错误处理</li>
+                                <li>README 中英文完善</li>
+                            </ul>
+                        </div>
+                        <div class="roadmap-card">
+                            <h4>
+                                <span>中期</span>
+                                <span class="roadmap-tag mid">v0.3</span>
+                            </h4>
+                            <ul class="roadmap-list">
+                                <li>后端自动故障转移</li>
+                                <li>数据完整性验证</li>
+                                <li>生命周期策略</li>
+                                <li>Prometheus 指标</li>
+                                <li>配置热重载</li>
+                            </ul>
+                        </div>
+                        <div class="roadmap-card">
+                            <h4>
+                                <span>长期</span>
+                                <span class="roadmap-tag long">v1.0</span>
+                            </h4>
+                            <ul class="roadmap-list">
+                                <li>多租户支持</li>
+                                <li>OpenTelemetry 追踪</li>
+                                <li>数据加密</li>
+                                <li>存储后端插件系统</li>
+                                <li>性能基准测试</li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Changelog -->
+                <section class="section" id="changelog">
+                    <div class="section-header">
+                        <div class="section-label">更新日志</div>
+                        <h2 class="section-title">版本历史</h2>
+                        <p class="section-desc">项目持续迭代中</p>
+                    </div>
+                    <div class="changelog">
+                        <div class="changelog-item">
+                            <div class="changelog-version">v0.1.0</div>
+                            <div class="changelog-date">2024 年</div>
+                            <div class="changelog-desc">
+                                初始版本发布。包含四大存储后端（Local、P2P、S3、IPFS），
+                                StorageHub 核心协调器，策略路由引擎，CLI 工具。
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Footer -->
+            <footer>
+                <p>
+                    USP - Unified Storage Platform ·
+                    使用 <a href="https://www.rust-lang.org">Rust</a> 构建 ·
+                    <a href="https://github.com/ghshhf/usp-kubo">GitHub</a>
+                </p>
+                <p style="margin-top: 0.5rem; color: var(--text-muted);">
+                    MIT / Apache-2.0 License
+                </p>
+            </footer>
+        </main>
+    </div>
+
+    <script>
+        // Mobile menu toggle
+        const menuToggle = document.getElementById('menuToggle');
+        const sidebar = document.getElementById('sidebar');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+        menuToggle.addEventListener('click', () => {
+            sidebar.classList.toggle('open');
+            sidebarOverlay.classList.toggle('open');
+        });
+
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('open');
+        });
+
+        // Active nav on scroll
+        const sections = document.querySelectorAll('.section[id]');
+        const navItems = document.querySelectorAll('.nav-item');
+
+        window.addEventListener('scroll', () => {
+            let current = '';
+            sections.forEach(section => {
+                const sectionTop = section.offsetTop;
+                if (scrollY >= sectionTop - 150) {
+                    current = section.getAttribute('id');
+                }
+            });
+
+            navItems.forEach(item => {
+                item.classList.remove('active');
+                if (item.getAttribute('href') === `#${current}`) {
+                    item.classList.add('active');
+                }
+            });
+        });
+
+        // Smooth scroll
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    sidebar.classList.remove('open');
+                    sidebarOverlay.classList.remove('open');
+                }
+            });
+        });
+
+        // Tabs
+        const tabs = document.querySelectorAll('.tab');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                const tabId = tab.dataset.tab;
+
+                tabs.forEach(t => t.classList.remove('active'));
+                tabContents.forEach(c => c.classList.remove('active'));
+
+                tab.classList.add('active');
+                document.getElementById(`tab-${tabId}`).classList.add('active');
+            });
+        });
+
+        // Search
+        const searchInput = document.getElementById('searchInput');
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const query = searchInput.value.toLowerCase();
+                const sectionIds = ['features', 'install', 'quickstart', 'architecture', 'backends', 'config', 'cli', 'roadmap', 'changelog'];
+                const matched = sectionIds.find(id => id.includes(query));
+                if (matched) {
+                    document.getElementById(matched).scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+        });
+    </script>
+</body>
+</html>

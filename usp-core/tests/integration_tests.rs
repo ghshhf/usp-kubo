@@ -2,7 +2,6 @@
 
 use bytes::Bytes;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU32, Ordering};
 
 #[tokio::test]
 async fn test_cid_computation() {
@@ -18,8 +17,8 @@ async fn test_cid_computation() {
 
 #[tokio::test]
 async fn test_local_backend_basic() {
-    use usp_core::backends::{LocalBackend, StorageBackend, BackendConfig};
     use tempfile::tempdir;
+    use usp_core::backends::{BackendConfig, LocalBackend, StorageBackend};
 
     let temp = tempdir().unwrap();
     let local = LocalBackend::new(temp.path().to_path_buf());
@@ -40,7 +39,7 @@ async fn test_local_backend_basic() {
 
 #[tokio::test]
 async fn test_p2p_backend_basic() {
-    use usp_core::backends::{P2PBackend, StorageBackend, BackendConfig};
+    use usp_core::backends::{BackendConfig, P2PBackend, StorageBackend};
 
     let p2p = P2PBackend::new().unwrap();
     p2p.init(BackendConfig::Default).await.unwrap();
@@ -70,7 +69,7 @@ async fn test_policy_engine_default_rules() {
         backend_hint: None,
     };
 
-    let backend = engine.decide("small.txt", &opts).unwrap();
+    let backend = engine.decide("small.txt", &opts, 100).unwrap();
     assert_eq!(backend, usp_core::types::BackendType::Local);
 }
 
@@ -115,10 +114,10 @@ async fn test_retry_config() {
 
 #[tokio::test]
 async fn test_storagehub_integration() {
-    use usp_core::StorageHub;
-    use usp_core::backends::{LocalBackend, StorageBackend, BackendConfig};
-    use usp_core::types::StorageOptions;
     use tempfile::tempdir;
+    use usp_core::backends::{BackendConfig, LocalBackend, StorageBackend};
+    use usp_core::types::StorageOptions;
+    use usp_core::StorageHub;
 
     let hub = StorageHub::new();
 
@@ -130,7 +129,10 @@ async fn test_storagehub_integration() {
 
     // Put
     let data = Bytes::from("Test data for integration");
-    let receipt = hub.put("integrated/key", data.clone(), StorageOptions::default()).await.unwrap();
+    let _receipt = hub
+        .put("integrated/key", data.clone(), StorageOptions::default())
+        .await
+        .unwrap();
 
     // Get
     let retrieved = hub.get("integrated/key").await.unwrap();

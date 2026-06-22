@@ -10,18 +10,18 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use std::path::PathBuf;
 
-pub mod local;
-pub mod p2p;
 pub mod cloud;
 pub mod decentralized;
+pub mod local;
+pub mod p2p;
 
-pub use local::LocalBackend;
-pub use p2p::P2PBackend;
 pub use cloud::CloudS3Backend;
 pub use decentralized::DecentralizedStorage;
+pub use local::LocalBackend;
+pub use p2p::P2PBackend;
 
-pub use crate::types::{BackendType, BackendStats, StoreReceipt};
 use crate::error::Result;
+pub use crate::types::{BackendStats, BackendType, StoreReceipt};
 
 /// Backend configuration
 #[derive(Debug, Clone, Default)]

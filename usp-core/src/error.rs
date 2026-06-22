@@ -48,10 +48,7 @@ pub enum Error {
     Network(String),
 
     #[error("all retries exhausted: last error: {last_error}, attempts: {attempts}")]
-    RetriesExhausted {
-        last_error: String,
-        attempts: u32,
-    },
+    RetriesExhausted { last_error: String, attempts: u32 },
 }
 
 impl Error {

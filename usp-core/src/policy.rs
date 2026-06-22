@@ -1,7 +1,7 @@
 //! Policy Engine - decides data placement strategy
 
-use std::collections::HashMap;
 use glob::Pattern;
+use std::collections::HashMap;
 
 use crate::types::*;
 
@@ -28,11 +28,24 @@ pub struct PlacementRule {
 }
 
 impl PlacementRule {
-    /// Check if this rule matches the given key and options
-    pub fn matches(&self, key: &str, opts: &StorageOptions) -> bool {
+    /// Check if this rule matches the given key, options and data size
+    pub fn matches(&self, key: &str, opts: &StorageOptions, size_bytes: u64) -> bool {
         // Check key pattern
         if let Ok(pattern) = Pattern::new(&self.key_pattern) {
             if !pattern.matches(key) {
+                return false;
+            }
+        }
+
+        // Check size constraints
+        if let Some(min_size) = self.min_size {
+            if size_bytes < min_size {
+                return false;
+            }
+        }
+
+        if let Some(max_size) = self.max_size {
+            if size_bytes > max_size {
                 return false;
             }
         }
@@ -114,9 +127,14 @@ impl PolicyEngine {
     }
 
     /// Decide which backend type to use
-    pub fn decide(&self, key: &str, opts: &StorageOptions) -> crate::Result<BackendType> {
+    pub fn decide(
+        &self,
+        key: &str,
+        opts: &StorageOptions,
+        size_bytes: u64,
+    ) -> crate::Result<BackendType> {
         for rule in &self.rules {
-            if rule.matches(key, opts) {
+            if rule.matches(key, opts, size_bytes) {
                 return Ok(self.tier_to_backend(rule.target_tier));
             }
         }

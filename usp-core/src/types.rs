@@ -1,8 +1,8 @@
 //! Core types for USP
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Storage options - determines how data is stored
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,9 +54,10 @@ pub enum StorageTier {
 }
 
 /// Backend type
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum BackendType {
     /// Local filesystem
+    #[default]
     Local,
     /// P2P network (IPFS/LibP2P)
     P2P,
@@ -64,12 +65,6 @@ pub enum BackendType {
     CloudS3,
     /// Decentralized storage
     Decentralized,
-}
-
-impl Default for BackendType {
-    fn default() -> Self {
-        Self::Local
-    }
 }
 
 /// Storage receipt - result of a store operation

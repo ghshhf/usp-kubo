@@ -2,7 +2,7 @@
 //!
 //! Simple content hashing using sha2
 
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 
 /// Compute a content hash for data (returns hex string prefixed with Qm)
 pub fn compute_cid(data: &[u8]) -> String {
@@ -32,7 +32,9 @@ mod tests {
 
     #[test]
     fn test_is_valid_cid() {
-        assert!(is_valid_cid("QmT5NvUtoM5nWFfrQdVrFtvGfKFmG7AHE8P34isapyhCxX"));
+        assert!(is_valid_cid(
+            "QmT5NvUtoM5nWFfrQdVrFtvGfKFmG7AHE8P34isapyhCxX"
+        ));
         assert!(!is_valid_cid("invalid"));
         assert!(!is_valid_cid("Qm"));
     }

@@ -6,11 +6,11 @@ use tokio::sync::RwLock;
 
 use bytes::Bytes;
 
-use crate::backends::{StorageBackend, BackendType};
+use crate::backends::{BackendType, StorageBackend};
+use crate::error::Result;
 use crate::policy::PolicyEngine;
 use crate::types::*;
-use crate::error::Result;
-use crate::utils::{HybridCache, RetryConfig, with_retry};
+use crate::utils::{with_retry, HybridCache, RetryConfig};
 
 /// Backend router - selects and routes to appropriate storage backend
 pub struct BackendRouter {
@@ -51,22 +51,33 @@ impl BackendRouter {
         backends.insert(backend.backend_type(), backend);
     }
 
-    /// Select best backend for given key and options
-    pub fn select_backend(&self, key: &str, opts: &StorageOptions) -> Result<BackendType> {
+    /// Select best backend for given key, options and data size
+    pub fn select_backend(
+        &self,
+        key: &str,
+        opts: &StorageOptions,
+        size_bytes: u64,
+    ) -> Result<BackendType> {
         if let Some(hint) = &opts.backend_hint {
             return Ok(*hint);
         }
-        self.policy_engine.decide(key, opts)
+        self.policy_engine.decide(key, opts, size_bytes)
     }
 
     /// Store data to selected backend with retries on transient errors
-    pub async fn store(&self, key: &str, value: Bytes, opts: StorageOptions) -> Result<StoreReceipt> {
-        let backend_type = self.select_backend(key, &opts)?;
+    pub async fn store(
+        &self,
+        key: &str,
+        value: Bytes,
+        opts: StorageOptions,
+    ) -> Result<StoreReceipt> {
+        let backend_type = self.select_backend(key, &opts, value.len() as u64)?;
 
         // Find the backend
         let backend = {
             let backends = self.backends.read().await;
-            backends.get(&backend_type)
+            backends
+                .get(&backend_type)
                 .ok_or_else(|| crate::error::Error::BackendNotFound(format!("{:?}", backend_type)))?
                 .clone()
         };
