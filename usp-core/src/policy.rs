@@ -144,7 +144,7 @@ impl PolicyEngine {
     fn tier_to_backend(&self, tier: StorageTier) -> BackendType {
         match tier {
             StorageTier::Hot => BackendType::Local,
-            StorageTier::Warm => BackendType::Local, // Default to local for now
+            StorageTier::Warm => BackendType::P2P, // P2P for warm data
             StorageTier::Cold => BackendType::CloudS3,
             StorageTier::Archive => BackendType::Decentralized,
         }

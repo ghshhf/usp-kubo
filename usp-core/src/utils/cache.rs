@@ -22,9 +22,10 @@ impl HybridCache {
     }
 
     pub async fn get(&self, key: &str) -> Result<Option<Bytes>> {
-        // Use peek() which only needs &self (no LRU promotion), allowing a read lock
-        let cache = self.cache.read().await;
-        Ok(cache.peek(key).cloned())
+        // Use get_mut() via write lock to promote the key in the LRU order.
+        // This ensures frequently accessed items are not evicted prematurely.
+        let mut cache = self.cache.write().await;
+        Ok(cache.get_mut(key).cloned())
     }
 
     pub async fn set(&self, key: &str, value: Bytes) -> Result<()> {
