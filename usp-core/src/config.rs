@@ -31,9 +31,14 @@
 //! default_backend = "local"
 //! ```
 
+use bytes::Bytes;
 use serde::Deserialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::{env, fs};
+
+use crate::backends::StorageBackend;
+use crate::StorageHub;
 
 /// Root configuration structure
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -288,6 +293,174 @@ impl Config {
     /// Get the effective data directory
     pub fn data_dir(&self) -> &str {
         &self.storage.data_dir
+    }
+
+    /// Initialize all enabled backends based on this configuration.
+    ///
+    /// This creates the necessary directories, establishes connections,
+    /// and returns a `StorageHub` with all backends registered.
+    /// If some backends fail to initialize, they are logged as warnings
+    /// and the remaining backends are still registered.
+    pub async fn init(&self) -> crate::Result<StorageHub> {
+        let hub = StorageHub::new();
+        let mut errors: Vec<String> = Vec::new();
+        let mut initialized_any = false;
+
+        // Local backend
+        if self.backends.local.enabled {
+            let data_dir = self.effective_data_dir();
+            let backend = crate::backends::LocalBackend::new(std::path::Path::new(&data_dir));
+            match backend
+                .init(crate::backends::BackendConfig::Default)
+                .await
+            {
+                Ok(()) => {
+                    hub.register_backend(std::sync::Arc::new(backend)).await;
+                    initialized_any = true;
+                    tracing::info!("Initialized local backend (dir={})", data_dir);
+                }
+                Err(e) => {
+                    let msg = format!("local backend: {}", e);
+                    tracing::warn!("Failed to init local backend: {}", e);
+                    errors.push(msg);
+                }
+            }
+        }
+
+        // P2P backend
+        if self.backends.p2p.enabled {
+            match crate::backends::P2PBackend::new() {
+                Ok(backend) => match backend
+                    .init(crate::backends::BackendConfig::Default)
+                    .await
+                {
+                    Ok(()) => {
+                        hub.register_backend(std::sync::Arc::new(backend)).await;
+                        initialized_any = true;
+                        tracing::info!("Initialized P2P backend");
+                    }
+                    Err(e) => {
+                        let msg = format!("p2p backend: {}", e);
+                        tracing::warn!("Failed to init P2P backend: {}", e);
+                        errors.push(msg);
+                    }
+                },
+                Err(e) => {
+                    let msg = format!("create p2p backend: {}", e);
+                    tracing::warn!("Failed to create P2P backend: {}", e);
+                    errors.push(msg);
+                }
+            }
+        }
+
+        // S3 backend
+        if self.backends.s3.enabled {
+            let bucket = match &self.backends.s3.bucket {
+                Some(b) => b.clone(),
+                None => {
+                    let msg = "s3: bucket not configured".to_string();
+                    tracing::warn!("{}", msg);
+                    errors.push(msg);
+                    "".to_string()
+                }
+            };
+            if !bucket.is_empty() {
+                let backend = crate::backends::CloudS3Backend::new();
+                let cfg = crate::backends::BackendConfig::CloudS3 {
+                    endpoint: self.backends.s3.endpoint.clone(),
+                    region: self.backends.s3.region.clone(),
+                    bucket: bucket.clone(),
+                    access_key_id: env::var("USP_S3_ACCESS_KEY")
+                        .ok()
+                        .or(self.backends.s3.access_key_id.clone())
+                        .unwrap_or_default(),
+                    secret_access_key: env::var("USP_S3_SECRET_KEY")
+                        .ok()
+                        .or(self.backends.s3.secret_access_key.clone())
+                        .unwrap_or_default(),
+                    path_prefix: self.backends.s3.path_prefix.clone(),
+                };
+                match backend.init(cfg).await {
+                    Ok(()) => {
+                        hub.register_backend(std::sync::Arc::new(backend)).await;
+                        initialized_any = true;
+                        tracing::info!(
+                            "Initialized S3 backend (bucket={})",
+                            bucket
+                        );
+                    }
+                    Err(e) => {
+                        let msg = format!("s3 backend: {}", e);
+                        tracing::warn!("Failed to init S3 backend: {}", e);
+                        errors.push(msg);
+                    }
+                }
+            }
+        }
+
+        // Decentralized (IPFS) backend
+        if self.backends.decentralized.enabled {
+            let data_dir = std::path::PathBuf::from(&self.storage.data_dir).join(".decentralized");
+            match crate::backends::DecentralizedStorage::new(
+                &self.backends.decentralized.gateway_url,
+                &self.backends.decentralized.api_url,
+                data_dir.clone(),
+            ) {
+                Ok(backend) => match backend
+                    .init(crate::backends::BackendConfig::Default)
+                    .await
+                {
+                    Ok(()) => {
+                        hub.register_backend(std::sync::Arc::new(backend)).await;
+                        initialized_any = true;
+                        tracing::info!(
+                            "Initialized IPFS backend (api={})",
+                            self.backends.decentralized.api_url
+                        );
+                    }
+                    Err(e) => {
+                        let msg = format!("ipfs backend: {}", e);
+                        tracing::warn!("Failed to init ipfs backend: {}", e);
+                        errors.push(msg);
+                    }
+                },
+                Err(e) => {
+                    let msg = format!("create ipfs backend: {}", e);
+                    tracing::warn!("Failed to create ipfs backend: {}", e);
+                    errors.push(msg);
+                }
+            }
+        }
+
+        // If no backends were successfully initialized, return an error
+        if !initialized_any {
+            let err_msg = if errors.is_empty() {
+                "no backends are enabled".to_string()
+            } else {
+                format!("all backends failed to initialize: {}", errors.join("; "))
+            };
+            return Err(crate::Error::Storage(err_msg));
+        }
+
+        // Log summary
+        if !errors.is_empty() {
+            tracing::warn!(
+                "Some backends failed to initialize ({} errors): {}",
+                errors.len(),
+                errors.join("; ")
+            );
+        }
+
+        Ok(hub)
+    }
+
+    /// Get the effective data directory (local backend dir overrides storage dir)
+    fn effective_data_dir(&self) -> String {
+        self.backends
+            .local
+            .data_dir
+            .clone()
+            .unwrap_or_else(|| self.storage.data_dir.clone())
     }
 }
 

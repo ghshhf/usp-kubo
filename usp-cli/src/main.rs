@@ -180,7 +180,7 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    // Handle Init command: write config file
+    // Handle Init command: write config file and initialize backends
     if let Commands::Init { backend } = &cli.command {
         let backend_type = parse_backend(backend)?;
         let mut config = usp_core::config::Config::default();
@@ -204,7 +204,18 @@ async fn main() -> Result<()> {
         let config_path = std::path::Path::new(".usp.toml");
         config.save_to(config_path)?;
         println!("Configuration written to {}", config_path.display());
-        println!("Backend {:?} enabled. Use 'usp store' to start storing data.", backend_type);
+
+        // Actually initialize all enabled backends
+        match config.init().await {
+            Ok(_hub) => {
+                println!("Backend {:?} initialized successfully.", backend_type);
+                println!("You can now use 'usp store <key> <file>' to store data.");
+            }
+            Err(e) => {
+                eprintln!("Warning: config written but backend init failed: {}", e);
+                eprintln!("You can retry by running 'usp init' again.");
+            }
+        }
         return Ok(());
     }
 
