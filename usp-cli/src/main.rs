@@ -4,11 +4,7 @@ use anyhow::Result;
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use usp_core::backends::{
-    BackendConfig, CloudS3Backend, DecentralizedStorage, LocalBackend, P2PBackend, StorageBackend,
-};
 use usp_core::types::{BackendType, StorageOptions};
 use usp_core::StorageHub;
 
@@ -83,94 +79,6 @@ fn parse_backend(s: &str) -> Result<BackendType> {
     }
 }
 
-/// Initialize backends from config and register with the hub.
-/// Returns the configured hub (or error if no backends could be initialized).
-async fn init_hub_from_config(config: &usp_core::config::Config, data_dir: &PathBuf) -> Result<StorageHub> {
-    let hub = StorageHub::new();
-
-    // Always try to init Local backend if enabled (or by default)
-    if config.backends.local.enabled {
-        let local_dir = config.backends.local.data_dir
-            .as_deref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| data_dir.clone());
-        let local = Arc::new(LocalBackend::new(local_dir));
-        if let Err(e) = local.init(BackendConfig::Default).await {
-            tracing::warn!("Failed to init local backend: {}", e);
-        } else {
-            hub.register_backend(local.clone()).await;
-            tracing::debug!("Registered local backend");
-        }
-    }
-
-    // Init P2P backend if enabled
-    if config.backends.p2p.enabled {
-        match P2PBackend::new() {
-            Ok(p2p) => {
-                if let Err(e) = p2p.init(BackendConfig::Default).await {
-                    tracing::warn!("Failed to init P2P backend: {}", e);
-                } else {
-                    let bt = hub.register_backend(Arc::new(p2p)).await;
-                    tracing::debug!("Registered {:?} backend", bt);
-                }
-            }
-            Err(e) => tracing::warn!("Failed to create P2P backend: {}", e),
-        }
-    }
-
-    // Init S3 backend if enabled
-    if config.backends.s3.enabled {
-        let s3_cfg = &config.backends.s3;
-        if s3_cfg.bucket.is_none() {
-            tracing::warn!("S3 backend enabled but no bucket configured; skipping");
-        } else {
-            let s3 = Arc::new(CloudS3Backend::new());
-            let cfg = BackendConfig::CloudS3 {
-                endpoint: s3_cfg.endpoint.clone(),
-                region: s3_cfg.region.clone(),
-                bucket: s3_cfg.bucket.clone().unwrap_or_default(),
-                access_key_id: std::env::var("USP_S3_ACCESS_KEY")
-                    .ok()
-                    .or_else(|| s3_cfg.access_key_id.clone())
-                    .unwrap_or_default(),
-                secret_access_key: std::env::var("USP_S3_SECRET_KEY")
-                    .ok()
-                    .or_else(|| s3_cfg.secret_access_key.clone())
-                    .unwrap_or_default(),
-                path_prefix: s3_cfg.path_prefix.clone(),
-            };
-            if let Err(e) = s3.init(cfg).await {
-                tracing::warn!("Failed to init S3 backend: {}", e);
-            } else {
-                let bt = hub.register_backend(s3.clone()).await;
-                tracing::debug!("Registered {:?} backend", bt);
-            }
-        }
-    }
-
-    // Init Decentralized backend if enabled
-    if config.backends.decentralized.enabled {
-        let dec_dir = data_dir.join(".decentralized");
-        match DecentralizedStorage::new(
-            &config.backends.decentralized.gateway_url,
-            &config.backends.decentralized.api_url,
-            dec_dir,
-        ) {
-            Ok(dec) => {
-                if let Err(e) = dec.init(BackendConfig::Default).await {
-                    tracing::warn!("Failed to init decentralized backend: {}", e);
-                } else {
-                    let bt = hub.register_backend(Arc::new(dec)).await;
-                    tracing::debug!("Registered {:?} backend", bt);
-                }
-            }
-            Err(e) => tracing::warn!("Failed to create decentralized backend: {}", e),
-        }
-    }
-
-    Ok(hub)
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::registry()
@@ -219,15 +127,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Load config
+    // Load config and initialize all enabled backends
     let config = usp_core::config::Config::load()
         .unwrap_or_else(|_| {
             tracing::debug!("No config file found, using defaults");
             usp_core::config::Config::default()
         });
-
-    // Initialize hub with backends from config
-    let hub = init_hub_from_config(&config, &cli.data_dir).await?;
+    let hub = config.init().await?;
 
     match &cli.command {
         Commands::Store { key, file } => {
