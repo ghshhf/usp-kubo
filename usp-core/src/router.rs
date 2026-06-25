@@ -35,7 +35,7 @@ impl BackendRouter {
         Self {
             backends: Arc::new(RwLock::new(HashMap::new())),
             policy_engine: Arc::new(PolicyEngine::new()),
-            cache: Arc::new(HybridCache::new(100_000_000)),
+            cache: Arc::new(HybridCache::new(1_000)),
             retry_config: config,
         }
     }

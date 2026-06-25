@@ -38,7 +38,7 @@ sha2 = "0.10"
 chrono = { version = "0.4", features = ["serde"] }
 
 # P2P
-libp2p = { version = "0.53", features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns", "kad", "identify", "macros", "tokio"] }
+libp2p = { version = "0.53", features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns", "kad", "identify", "macros", "tokio", "request-response"] }
 
 # S3 client (HTTP + SigV4)
 reqwest = { version = "0.11", features = ["rustls-tls", "stream", "multipart", "json"] }

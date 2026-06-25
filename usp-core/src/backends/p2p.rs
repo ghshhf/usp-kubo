@@ -15,10 +15,11 @@
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::StreamExt;
+use futures::{AsyncReadExt, AsyncWriteExt, StreamExt};
 use libp2p::{
-    identify, identity as lp_identity, kad, multiaddr::Protocol, noise, swarm::SwarmEvent, tcp,
-    yamux, Multiaddr, PeerId, Swarm, Transport,
+    identify, identity as lp_identity, kad, multiaddr::Protocol, noise,
+    request_response::{self, RequestResponseCodec},
+    swarm::SwarmEvent, tcp, yamux, Multiaddr, PeerId, Swarm, Transport,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -66,6 +67,17 @@ enum Command {
     },
     /// Get the local peer id.
     LocalPeerId { reply: oneshot::Sender<PeerId> },
+    /// Request data by key from a specific peer.
+    FetchFromPeer {
+        peer: PeerId,
+        key: String,
+        reply: oneshot::Sender<std::result::Result<Option<Bytes>, Error>>,
+    },
+    /// Register a key+value pair as available for serving to other peers.
+    RegisterServe {
+        key: String,
+        value: Bytes,
+    },
     /// Disconnect gracefully.
     Shutdown { reply: oneshot::Sender<()> },
 }
@@ -80,20 +92,79 @@ pub struct P2PBackend {
 
 /// Combined network behaviour: Kademlia (DHT) + Identify (protocol negotiation).
 mod behaviour {
-    // The NetworkBehaviour derive macro generates code that uses an
-    // unqualified `Result` identifier. We deliberately do NOT import the
-    // crate's `Result` type alias (defined in `crate::error`) into this
-    // module so that any `Result` in the macro-generated code resolves to
-    // the prelude's `std::result::Result<T, E>`.
     use libp2p::swarm::NetworkBehaviour;
-    use libp2p::{identify, kad};
+    use libp2p::{identify, kad, request_response};
 
     #[derive(NetworkBehaviour)]
     #[behaviour(prelude = "libp2p::swarm::derive_prelude")]
     pub struct MyBehaviour {
         pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
         pub identify: identify::Behaviour,
+        pub fetch: request_response::Behaviour<super::FetchCodec>,
     }
+}
+
+/// Simple length-prefixed codec for the fetch protocol.
+/// Format: [4-byte BE length][key bytes] -> request
+///         [4-byte BE length][data bytes] -> response
+#[derive(Clone, Default)]
+pub struct FetchCodec;
+
+#[async_trait]
+impl RequestResponseCodec for FetchCodec {
+    type Protocol = Vec<u8>;
+    type Request = Vec<u8>;
+    type Response = Vec<u8>;
+
+    async fn read_request<T>(&mut self, _: &Self::Protocol, io: &mut T) -> std::io::Result<Self::Request>
+    where
+        T: futures::AsyncRead + Unpin + Send,
+    {
+        let len = read_u32_be(io).await?;
+        let mut buf = vec![0u8; len as usize];
+        io.read_exact(&mut buf).await?;
+        Ok(buf)
+    }
+
+    async fn read_response<T>(&mut self, _: &Self::Protocol, io: &mut T) -> std::io::Result<Self::Response>
+    where
+        T: futures::AsyncRead + Unpin + Send,
+    {
+        let len = read_u32_be(io).await?;
+        let mut buf = vec![0u8; len as usize];
+        io.read_exact(&mut buf).await?;
+        Ok(buf)
+    }
+
+    async fn write_request<T>(&mut self, _: &Self::Protocol, io: &mut T, req: Self::Request) -> std::io::Result<()>
+    where
+        T: futures::AsyncWrite + Unpin + Send,
+    {
+        write_u32_be(io, req.len() as u32).await?;
+        io.write_all(&req).await?;
+        io.close().await?;
+        Ok(())
+    }
+
+    async fn write_response<T>(&mut self, _: &Self::Protocol, io: &mut T, resp: Self::Response) -> std::io::Result<()>
+    where
+        T: futures::AsyncWrite + Unpin + Send,
+    {
+        write_u32_be(io, resp.len() as u32).await?;
+        io.write_all(&resp).await?;
+        io.close().await?;
+        Ok(())
+    }
+}
+
+async fn read_u32_be<T: futures::AsyncRead + Unpin>(io: &mut T) -> std::io::Result<u32> {
+    let mut buf = [0u8; 4];
+    io.read_exact(&mut buf).await?;
+    Ok(u32::from_be_bytes(buf))
+}
+
+async fn write_u32_be<T: futures::AsyncWrite + Unpin>(io: &mut T, val: u32) -> std::io::Result<()> {
+    io.write_all(&val.to_be_bytes()).await
 }
 
 use behaviour::MyBehaviour;
@@ -229,6 +300,16 @@ impl StorageBackend for P2PBackend {
             stored.insert(cid.clone(), value.clone());
         }
 
+        // Register data as available for serving to other peers
+        let _ = self.cmd_tx.send(Command::RegisterServe {
+            key: key.to_string(),
+            value: value.clone(),
+        });
+        let _ = self.cmd_tx.send(Command::RegisterServe {
+            key: cid.clone(),
+            value,
+        });
+
         // 1) Store the value as a DHT record under `key`.
         if let Err(e) = send_cmd(&self.cmd_tx, |reply| Command::PutRecord {
             key: key.to_string(),
@@ -294,18 +375,37 @@ impl StorageBackend for P2PBackend {
             })
             .await;
 
-        match providers {
-            Ok(p) if !p.is_empty() => {
-                tracing::debug!(
-                    "P2P GetProviders found {} provider(s) for {}; no direct record",
-                    p.len(),
-                    key
-                );
+        if let Ok(providers) = providers {
+            for provider in &providers {
+                if *provider == self.peer_id().await.unwrap_or(*provider) {
+                    continue; // Skip self
+                }
+                tracing::debug!("P2P fetching {} from provider {}", key, provider);
+                let result: Result<Option<Bytes>> =
+                    send_cmd(&self.cmd_tx, |reply| Command::FetchFromPeer {
+                        peer: *provider,
+                        key: key.to_string(),
+                        reply,
+                    })
+                    .await;
+
+                match result {
+                    Ok(Some(data)) => {
+                        self.stored_data
+                            .write()
+                            .await
+                            .insert(key.to_string(), data.clone());
+                        return Ok(Some(data));
+                    }
+                    Ok(None) => continue,
+                    Err(e) => {
+                        tracing::debug!("P2P fetch from {} failed: {}, trying next", provider, e);
+                        continue;
+                    }
+                }
             }
-            Ok(_) => {}
-            Err(e) => {
-                tracing::debug!("P2P GetProviders failed for {}: {}", key, e);
-            }
+        } else if let Err(e) = providers {
+            tracing::debug!("P2P GetProviders failed for {}: {}", key, e);
         }
 
         Ok(None)
@@ -376,6 +476,11 @@ async fn swarm_task(
     let behaviour = MyBehaviour {
         kademlia,
         identify: identify_behaviour,
+        fetch: request_response::Behaviour::new(
+            vec![(b"/usp-kubo/fetch/1.0.0".to_vec(), request_response::ProtocolSupport::Full)],
+            FetchCodec::default(),
+            Duration::from_secs(30),
+        ),
     };
 
     // Build the swarm with the legacy `Swarm::new` constructor + tokio executor.
@@ -391,6 +496,11 @@ async fn swarm_task(
         HashMap::new();
     let mut pending_put_record: HashMap<kad::QueryId, oneshot::Sender<Result<()>>> = HashMap::new();
     let mut pending_start_providing: HashMap<kad::QueryId, oneshot::Sender<Result<()>>> =
+        HashMap::new();
+    // Data available for serving to other peers
+    let mut serve_map: HashMap<String, Bytes> = HashMap::new();
+    // Map of pending fetch requests (request_id -> reply sender)
+    let mut pending_fetches: HashMap<request_response::RequestId, oneshot::Sender<std::result::Result<Option<Bytes>, Error>>> =
         HashMap::new();
 
     loop {
@@ -507,6 +617,14 @@ async fn swarm_task(
                     }
                     Command::LocalPeerId { reply } => {
                         let _ = reply.send(*swarm.local_peer_id());
+                    }
+                    Command::RegisterServe { key, value } => {
+                        serve_map.insert(key, value);
+                    }
+                    Command::FetchFromPeer { peer, key, reply } => {
+                        // Send a request to the peer asking for data by key
+                        let request_id = swarm.behaviour_mut().fetch.send_request(&peer, key.into_bytes());
+                        pending_fetches.insert(request_id, reply);
                     }
                     Command::Shutdown { reply } => {
                         let _ = reply.send(());
@@ -652,6 +770,9 @@ fn handle_swarm_event(
             // Identify events are useful for NAT-traversal in real deployments;
             // we keep them wired so the protocol is fully functional.
         }
+        SwarmEvent::Behaviour(MyBehaviourEvent::Fetch(fetch_event)) => {
+            handle_fetch_event(fetch_event, &mut serve_map, &mut pending_fetches);
+        }
         SwarmEvent::IncomingConnectionError { error, .. } => {
             tracing::debug!("P2P incoming error: {:?}", error);
         }
@@ -659,6 +780,56 @@ fn handle_swarm_event(
             tracing::debug!("P2P outgoing error: {:?}", error);
         }
         _ => {}
+    }
+}
+
+/// Handle request-response fetch events.
+fn handle_fetch_event(
+    event: libp2p::request_response::Event<FetchCodec>,
+    serve_map: &mut HashMap<String, Bytes>,
+    pending_fetches: &mut HashMap<request_response::RequestId, oneshot::Sender<std::result::Result<Option<Bytes>, Error>>>,
+) {
+    match event {
+        libp2p::request_response::Event::Message { peer, message, .. } => {
+            match message {
+                // We received a request from a peer asking for data
+                request_response::Message::Request {
+                    request_id, request, channel, ..
+                } => {
+                    let key = String::from_utf8_lossy(&request).to_string();
+                    if let Some(data) = serve_map.get(&key) {
+                        tracing::debug!("Serving fetch request for '{}' to peer {}", key, peer);
+                        let _ = channel.send(data.clone().into());
+                    } else {
+                        tracing::debug!("No data found for fetch request '{}'", key);
+                        // Send empty response to indicate no data
+                        let _ = channel.send(Vec::new());
+                    }
+                }
+                // We received a response to our fetch request
+                request_response::Message::Response {
+                    request_id, response, ..
+                } => {
+                    if let Some(reply) = pending_fetches.remove(&request_id) {
+                        if response.is_empty() {
+                            let _ = reply.send(Ok(None));
+                        } else {
+                            let _ = reply.send(Ok(Some(Bytes::from(response))));
+                        }
+                    }
+                }
+            }
+        }
+        libp2p::request_response::Event::OutboundFailure {
+            request_id, error, ..
+        } => {
+            if let Some(reply) = pending_fetches.remove(&request_id) {
+                let _ = reply.send(Err(Error::Network(format!("fetch outbound failure: {}", error))));
+            }
+        }
+        libp2p::request_response::Event::InboundFailure { error, .. } => {
+            tracing::debug!("Fetch inbound failure: {:?}", error);
+        }
     }
 }
 

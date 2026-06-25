@@ -22,9 +22,9 @@ impl HybridCache {
     }
 
     pub async fn get(&self, key: &str) -> Result<Option<Bytes>> {
-        // Need write lock to call get() which requires &mut self
-        let mut cache = self.cache.write().await;
-        Ok(cache.get(key).cloned())
+        // Use peek() which only needs &self (no LRU promotion), allowing a read lock
+        let cache = self.cache.read().await;
+        Ok(cache.peek(key).cloned())
     }
 
     pub async fn set(&self, key: &str, value: Bytes) -> Result<()> {

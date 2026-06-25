@@ -30,7 +30,7 @@ bs58 = "0.5"
 multihash = { workspace = true }
 
 # P2P features - must match what the code actually uses
-libp2p = { workspace = true, features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns", "kad", "identify", "macros", "tokio"] }
+libp2p = { workspace = true, features = ["tcp", "quic", "yamux", "noise", "gossipsub", "mdns", "kad", "identify", "macros", "tokio", "request-response"] }
 
 # For retry jitter
 rand = "0.8"
