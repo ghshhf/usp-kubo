@@ -16,10 +16,25 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
 use tokio::sync::CancellationToken;
 use usp_core::StorageHub;
+use usp_core::types::StorageTier;
 
 const DEFAULT_DAEMON_ADDR: &str = "127.0.0.1:4222";
 const PID_FILE: &str = ".usp-daemon.pid";
 const LOG_FILE: &str = ".usp-daemon.log";
+
+/// Parse StorageTier from string.
+fn parse_tier(s: &str) -> Result<StorageTier> {
+    match s.to_lowercase().as_str() {
+        "hot" => Ok(StorageTier::Hot),
+        "warm" => Ok(StorageTier::Warm),
+        "cold" => Ok(StorageTier::Cold),
+        "archive" => Ok(StorageTier::Archive),
+        _ => anyhow::bail!(
+            "Unknown tier: {}. Valid tiers: hot, warm, cold, archive",
+            s
+        ),
+    }
+}
 
 /// JSON-RPC style request
 #[derive(Serialize, Deserialize, Debug)]
@@ -323,12 +338,21 @@ async fn handle_put(hub: &StorageHub, params: serde_json::Value) -> Result<Daemo
         .get("replicas")
         .and_then(|v| v.as_u64())
         .unwrap_or(1) as u32;
+    let tier_str = params
+        .get("tier")
+        .and_then(|v| v.as_str());
+    let tier_opt = if let Some(ts) = tier_str {
+        Some(parse_tier(ts)?)
+    } else {
+        None
+    };
 
     let data = tokio::fs::read(file).await?;
     let bytes = Bytes::from(data);
     let opts = usp_core::types::StorageOptions {
         ttl_seconds: ttl,
         replicas,
+        tier: tier_opt,
         ..Default::default()
     };
 

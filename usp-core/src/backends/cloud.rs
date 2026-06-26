@@ -446,6 +446,42 @@ impl StorageBackend for CloudS3Backend {
         Ok(true)
     }
 
+    async fn list_keys(&self) -> Result<Vec<String>> {
+        let mut keys = Vec::new();
+        let mut continuation_token: Option<String> = None;
+
+        loop {
+            let mut url = self.object_url("").await?;
+            // Append list-type=2 to use ListObjectsV2
+            let separator = if url.as_str().contains('?') { "&" } else { "?" };
+            let mut url_str = format!("{}list-type=2", url, separator);
+            if let Some(ref prefix) = self.config().await?.path_prefix {
+                url_str.push_str(&format!("&prefix={}", prefix));
+            }
+            if let Some(ref token) = continuation_token {
+                url_str.push_str(&format!("&continuation-token={}", token));
+            }
+
+            let resp = self
+                .send_signed(Method::GET, Url::parse(&url_str)?, Vec::new(), Vec::new())
+                .await?;
+            if !resp.status().is_success() {
+                return Err(Self::error_from_response(resp).await);
+            }
+
+            let body = resp.text().await.map_err(|e| Error::Network(format!("S3 read body failed: {}", e)))?;
+            let (mut batch, is_truncated, next_token) = parse_list_objects_v2(&body);
+            keys.append(&mut batch);
+
+            if !is_truncated {
+                break;
+            }
+            continuation_token = next_token;
+        }
+
+        Ok(keys)
+    }
+
     async fn stats(&self) -> Result<BackendStats> {
         Ok(BackendStats {
             // S3 has no fixed capacity; use a placeholder large value.
@@ -530,6 +566,67 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
     let mut buf = [0u8; 32];
     buf.copy_from_slice(&out);
     buf
+}
+
+/// Parse S3 ListObjectsV2 XML response.
+/// Returns (keys, is_truncated, next_continuation_token).
+fn parse_list_objects_v2(body: &str) -> (Vec<String>, bool, Option<String>) {
+    let mut keys = Vec::new();
+    let mut is_truncated = false;
+    let mut next_token = None;
+
+    // Simple XML tag extraction (S3 ListObjectsV2 response).
+    // Handles: <Key>...</Key> possibly across lines.
+    let mut pos = 0usize;
+    let bytes = body.as_bytes();
+    while pos < bytes.len() {
+        if let Some(key_start) = find_substring(bytes, pos, b"<Key>") {
+            let content_start = key_start + 5;
+            if let Some(key_end) = find_substring(bytes, content_start, b"</Key>") {
+                let key = String::from_utf8_lossy(&bytes[content_start..key_end]);
+                keys.push(key);
+                pos = key_end + 7; // len("</Key>")
+                continue;
+            }
+        }
+        pos += 1;
+    }
+
+    // Check IsTruncated
+    if body.contains("<IsTruncated>true</IsTruncated>") {
+        is_truncated = true;
+    }
+
+    // Extract NextContinuationToken
+    if let Some(tok_start) = find_substring_bytes(body.as_bytes(), 0, b"<NextContinuationToken>") {
+        let content_start = tok_start + 26;
+        if let Some(tok_end) = find_substring_bytes(body.as_bytes(), content_start, b"</NextContinuationToken>") {
+            let token = String::from_utf8_lossy(&body.as_bytes()[content_start..tok_end]);
+            next_token = Some(token);
+        }
+    }
+
+    (keys, is_truncated, next_token)
+}
+
+/// Find substring in byte slice, return byte offset or None.
+fn find_substring_bytes(haystack: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
+    if start >= haystack.len() {
+        return None;
+    }
+    let mut i = start;
+    while i + needle.len() <= haystack.len() {
+        if &haystack[i..i + needle.len()] == needle {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Find substring (convenience wrapper for &str).
+fn find_substring(haystack: &[u8], start: usize, needle: &[u8]) -> Option<usize> {
+    find_substring_bytes(haystack, start, needle)
 }
 
 #[cfg(test)]

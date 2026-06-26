@@ -127,12 +127,18 @@ impl PolicyEngine {
     }
 
     /// Decide which backend type to use
+    /// If `opts.tier` is set, use it to override the policy engine's decision.
     pub fn decide(
         &self,
         key: &str,
         opts: &StorageOptions,
         size_bytes: u64,
     ) -> crate::Result<BackendType> {
+        // If user explicitly set a tier, use it directly
+        if let Some(tier) = opts.tier {
+            return Ok(self.tier_to_backend(tier));
+        }
+
         for rule in &self.rules {
             if rule.matches(key, opts, size_bytes) {
                 return Ok(self.tier_to_backend(rule.target_tier));

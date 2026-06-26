@@ -1,55 +1,49 @@
-//! USP CLI - Unified Storage Platform command-line interface
-
-pub mod daemon;
-
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use bytes::Bytes;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use usp_core::types::{BackendType, StorageOptions};
+use tracing_subscriber::EnvFilter;
+
+use usp_core::types::*;
 use usp_core::StorageHub;
 
-const DEFAULT_DAEMON_ADDR: &str = "127.0.0.1:4222";
-const DEFAULT_PID_FILE: &str = ".usp-daemon.pid";
+mod daemon;
 
-#[derive(Parser, Debug)]
-#[command(name = "usp")]
-#[command(
-    version,
-    about = "Unified Storage Platform - multi-backend storage CLI"
-)]
+const DEFAULT_PID_FILE: &str = ".usp-daemon.pid";
+const DEFAULT_DAEMON_ADDR: &str = "127.0.0.1:4222";
+
+#[derive(Parser)]
+#[command(version, about = "USP-Kubo - Unified Storage Platform CLI")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 
-    /// Data directory for local storage
-    #[arg(short, long, default_value = ".usp-data")]
-    data_dir: PathBuf,
-
-    /// Connect to running daemon (auto-detect by default)
-    #[arg(long)]
+    /// Connect to daemon (auto-detect if running)
+    #[arg(short, long)]
     daemon: bool,
 
-    /// Daemon address (for client mode)
+    /// Daemon address
     #[arg(long, default_value = DEFAULT_DAEMON_ADDR)]
     daemon_addr: String,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand)]
 enum Commands {
     /// Store a file
     Store {
         /// Key name
         key: String,
-        /// File path to store
+        /// Input file path
         file: PathBuf,
-        /// TTL in seconds (0 = permanent)
+        /// Time to live in seconds (0 = permanent)
         #[arg(short, long, default_value = "0")]
         ttl: u64,
         /// Number of replicas
         #[arg(short, long, default_value = "1")]
         replicas: u32,
+        /// Storage tier: hot, warm, cold, archive
+        #[arg(long)]
+        tier: Option<String>,
     },
     /// Retrieve a file
     Get {
@@ -111,6 +105,19 @@ fn parse_backend(s: &str) -> Result<BackendType> {
     }
 }
 
+fn parse_tier(s: &str) -> Result<StorageTier> {
+    match s.to_lowercase().as_str() {
+        "hot" => Ok(StorageTier::Hot),
+        "warm" => Ok(StorageTier::Warm),
+        "cold" => Ok(StorageTier::Cold),
+        "archive" => Ok(StorageTier::Archive),
+        _ => anyhow::bail!(
+            "Unknown tier: {}. Valid tiers: hot, warm, cold, archive",
+            s
+        ),
+    }
+}
+
 /// Check if daemon is running by trying to connect.
 fn should_use_daemon(daemon_flag: bool, addr: &str) -> bool {
     if !daemon_flag {
@@ -127,7 +134,7 @@ async fn main() -> Result<()> {
     // Init tracing: skip for Daemon (it inits its own with file output)
     if !matches!(&cli.command, Commands::Daemon { .. }) {
         let _ = tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_env_filter(EnvFilter::from_default_env())
             .try_init();
     }
 
@@ -147,12 +154,14 @@ async fn main() -> Result<()> {
     if use_daemon {
         // Daemon client mode
         match &cli.command {
-            Commands::Store { key, file, ttl, replicas } => {
+            Commands::Store { key, file, ttl, replicas, tier } => {
+                let tier_str = tier.as_deref().unwrap_or("");
                 let params = serde_json::json!({
                     "key": key,
                     "file": file,
                     "ttl": ttl,
                     "replicas": replicas,
+                    "tier": tier_str,
                 });
                 let resp = daemon::send_to_daemon(&cli.daemon_addr, "put", params).await?;
                 if let Some(err) = resp.error {
@@ -174,6 +183,9 @@ async fn main() -> Result<()> {
                     }
                     if *ttl > 0 {
                         println!("  TTL: {}s", ttl);
+                    }
+                    if let Some(t) = tier {
+                        println!("  Tier: {}", t);
                     }
                 }
             }
@@ -272,12 +284,18 @@ async fn main() -> Result<()> {
         let hub = config.init().await?;
 
         match &cli.command {
-            Commands::Store { key, file, ttl, replicas } => {
+            Commands::Store { key, file, ttl, replicas, tier } => {
                 let data = tokio::fs::read(file).await?;
                 let bytes = Bytes::from(data);
+                let tier_opt = if let Some(t) = tier {
+                    Some(parse_tier(t)?)
+                } else {
+                    None
+                };
                 let opts = StorageOptions {
                     ttl_seconds: *ttl,
                     replicas: *replicas,
+                    tier: tier_opt,
                     ..StorageOptions::default()
                 };
                 let receipt = hub.put(key, bytes, opts).await?;
@@ -287,6 +305,9 @@ async fn main() -> Result<()> {
                 println!("  CID: {}", receipt.content_hash);
                 if *replicas > 1 {
                     println!("  Replicas: {}", *replicas);
+                }
+                if let Some(t) = tier {
+                    println!("  Tier: {}", t);
                 }
                 if *ttl > 0 {
                     println!("  TTL: {}s", ttl);
@@ -309,6 +330,7 @@ async fn main() -> Result<()> {
                     for key in &keys {
                         println!("{}", key);
                     }
+                    println!("\nTotal: {} keys", keys.len());
                 }
             }
             Commands::Delete { key } => {
@@ -319,27 +341,20 @@ async fn main() -> Result<()> {
                 let stats = hub.stat().await?;
                 println!("Storage Statistics");
                 println!("===================");
-                for (backend_type, backend_stats) in &stats.backends {
-                    println!("\n{:?}:", backend_type);
-                    println!(
-                        "  Total capacity: {:.2} GB",
-                        backend_stats.total_capacity as f64 / 1_000_000_000.0
-                    );
-                    println!(
-                        "  Used space: {:.2} MB",
-                        backend_stats.used_space as f64 / 1_000_000.0
-                    );
-                    println!(
-                        "  Available: {:.2} GB",
-                        backend_stats.available_space as f64 / 1_000_000_000.0
-                    );
-                    println!("  Items: {}", backend_stats.item_count);
-                    if backend_stats.peer_count > 0 {
-                        println!("  Peers: {}", backend_stats.peer_count);
+                for (backend, s) in &stats.backends {
+                    println!("{:?}:", backend);
+                    println!("  Total capacity: {} bytes", s.total_capacity);
+                    println!("  Used space: {} bytes", s.used_space);
+                    println!("  Available: {} bytes", s.available_space);
+                    println!("  Items: {}", s.item_count);
+                    if s.peer_count > 0 {
+                        println!("  Peers: {}", s.peer_count);
                     }
                 }
                 if stats.p2p_peer_count > 0 {
-                    println!("\nP2P Peers: {}", stats.p2p_peer_count);
+                    println!("\nP2P Network:");
+                    println!("  Peers: {}", stats.p2p_peer_count);
+                    println!("  Used (P2P): {} bytes", stats.p2p_used_bytes);
                 }
             }
             Commands::Pin { key } => {
@@ -356,38 +371,9 @@ async fn main() -> Result<()> {
             }
             Commands::Init { backend } => {
                 let backend_type = parse_backend(backend)?;
-                let mut config = usp_core::config::Config::load()
-                    .unwrap_or_else(|_| usp_core::config::Config::default());
-
-                match backend_type {
-                    BackendType::Local => {
-                        config.backends.local.enabled = true;
-                        config.backends.local.data_dir = Some(cli.data_dir.to_string_lossy().to_string());
-                    }
-                    BackendType::P2P => {
-                        config.backends.p2p.enabled = true;
-                    }
-                    BackendType::CloudS3 => {
-                        config.backends.s3.enabled = true;
-                        // Prompt for required fields (or use env vars)
-                        if config.backends.s3.bucket.is_none() {
-                            println!("Warning: S3 bucket not configured. Set USP_S3_BUCKET env var or edit .usp.toml");
-                        }
-                    }
-                    BackendType::Decentralized => {
-                        config.backends.decentralized.enabled = true;
-                    }
-                }
-
-                // Save config to .usp.toml
-                let config_path = std::path::Path::new(".usp.toml");
-                if let Err(e) = config.save_to(config_path) {
-                    tracing::warn!("Failed to save config: {}", e);
-                    anyhow::bail!("Failed to save config: {}", e);
-                }
-
-                println!("Initialized {:?} backend. Config saved to .usp.toml", backend_type);
-                println!("Run 'usp init --backend {}' to reconfigure.", backend);
+                println!("Initializing backend: {:?}", backend_type);
+                // TODO: implement interactive config initialization
+                println!("Edit .usp.toml to configure this backend.");
             }
             _ => unreachable!(),
         }

@@ -13,8 +13,8 @@ pub struct StorageOptions {
     /// Number of replicas
     pub replicas: u32,
 
-    /// Storage tier preference
-    pub tier: StorageTier,
+    /// Storage tier preference (None = use policy engine default)
+    pub tier: Option<StorageTier>,
 
     /// Whether to encrypt
     pub encrypted: bool,
@@ -31,7 +31,7 @@ impl Default for StorageOptions {
         Self {
             ttl_seconds: 0,
             replicas: 1,
-            tier: StorageTier::Warm,
+            tier: None, // None = let policy engine decide
             encrypted: false,
             tags: HashMap::new(),
             backend_hint: None,
