@@ -122,12 +122,14 @@ fn should_use_daemon(daemon_flag: bool, addr: &str) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize tracing (best-effort, won't panic if already initialized)
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .try_init();
-
     let cli = Cli::parse();
+
+    // Init tracing: skip for Daemon (it inits its own with file output)
+    if !matches!(&cli.command, Commands::Daemon { .. }) {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .try_init();
+    }
 
     // Handle Daemon command
     if let Commands::Daemon { pid_file, addr } = &cli.command {

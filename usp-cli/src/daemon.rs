@@ -96,6 +96,32 @@ fn check_pid_file(pid_file: &Path) -> Option<u32> {
 
 /// Start the daemon: init StorageHub, listen on TCP socket, handle requests.
 pub async fn start_daemon(pid_file: PathBuf, addr: String) -> Result<()> {
+    // Setup logging: stdout + file
+    {
+        use tracing_subscriber::layer::SubscriberExt;
+        use tracing_subscriber::util::SubscriberInitExt;
+
+        let log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(LOG_FILE)?;
+
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(log_file)
+            .with_ansi(false)
+            .with_filter(tracing_subscriber::EnvFilter::from_default_env());
+
+        let stdout_layer = tracing_subscriber::fmt::layer()
+            .with_filter(tracing_subscriber::EnvFilter::from_default_env());
+
+        tracing_subscriber::registry()
+            .with(stdout_layer)
+            .with(file_layer)
+            .init();
+    }
+
+    tracing::info!("Logging initialized: stdout + {}", LOG_FILE);
+
     // Check for stale PID file
     if let Some(old_pid) = check_pid_file(&pid_file) {
         return Err(anyhow!(
