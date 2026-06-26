@@ -14,7 +14,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
-use tokio_util::sync::CancellationToken;
+use tokio::sync::CancellationToken;
 use usp_core::StorageHub;
 
 const DEFAULT_DAEMON_ADDR: &str = "127.0.0.1:4222";
@@ -41,7 +41,7 @@ pub struct DaemonResponse {
 /// On Windows: use tasklist to check.
 /// On Unix: use kill(pid, 0) to check.
 fn is_pid_alive(pid: u32) -> bool {
-    #[cfg(windows)]
+    #[cfg(target_os = "windows")]
     {
         use std::process::Command;
         let output = Command::new("tasklist")
@@ -55,7 +55,7 @@ fn is_pid_alive(pid: u32) -> bool {
             Err(_) => false,
         }
     }
-    #[cfg(unix)]
+    #[cfg(not(target_os = "windows"))]
     {
         // send signal 0 to check if process exists
         unsafe { libc::kill(pid as i32, 0) == 0 }
