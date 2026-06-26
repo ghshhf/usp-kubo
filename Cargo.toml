@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "usp-core",
     "usp-cli",
+    "usp-api",
 ]
 
 [workspace.metadata.clippy]
