@@ -24,6 +24,8 @@ struct StoreMeta {
     content_hash: String,
     size_bytes: u64,
     backend: BackendType,
+    /// Whether this key's data is encrypted (AES-256-GCM)
+    encrypted: bool,
 }
 
 /// Unified Storage Hub - main entry point for all storage operations
@@ -34,6 +36,9 @@ pub struct StorageHub {
     metadata: Arc<RwLock<HashMap<String, StoreMeta>>>,
     /// Directory for persisting metadata (.usp-metadata.json)
     data_dir: PathBuf,
+    /// AES-256-GCM encryption key (32 bytes).
+    /// Read from env var `USP_ENCRYPTION_KEY` (base64) or set via `with_encryption_key()`.
+    encrypt_key: Option<[u8; 32]>,
 }
 
 impl StorageHub {
@@ -46,6 +51,7 @@ impl StorageHub {
             pinned_keys: Arc::new(RwLock::new(HashSet::new())),
             metadata: Arc::new(RwLock::new(HashMap::new())),
             data_dir,
+            encrypt_key: None,
         }
     }
 
@@ -58,6 +64,7 @@ impl StorageHub {
             pinned_keys: Arc::new(RwLock::new(HashSet::new())),
             metadata: Arc::new(RwLock::new(HashMap::new())),
             data_dir,
+            encrypt_key: None,
         }
     }
 
@@ -69,6 +76,7 @@ impl StorageHub {
             pinned_keys: Arc::new(RwLock::new(HashSet::new())),
             metadata: Arc::new(RwLock::new(HashMap::new())),
             data_dir,
+            encrypt_key: None,
         }
     }
 
@@ -103,6 +111,50 @@ impl StorageHub {
         Ok(())
     }
 
+    /// Set the AES-256-GCM encryption key.
+    /// Key must be 32 bytes (read from env var `USP_ENCRYPTION_KEY` as base64).
+    pub fn with_encryption_key(mut self, key: [u8; 32]) -> Self {
+        self.encrypt_key = Some(key);
+        self
+    }
+
+    /// Encrypt data using AES-256-GCM.
+    /// Returns: nonce (12 bytes) || ciphertext
+    fn encrypt_data(&self, data: &[u8]) -> Result<Vec<u8>> {
+        let key = self.encrypt_key.ok_or_else(|| Error::Storage(
+            "encryption key not set (set USP_ENCRYPTION_KEY env var)".to_string()
+        ))?;
+        use aes_gcm::{Aes256Gcm, Key, Nonce, aead::Aead};
+        use aes_gcm::Nonce as GcmNonce;
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
+        let nonce_bytes: [u8; 12] = rand::random();
+        let nonce = GcmNonce::from_slice(&nonce_bytes);
+        let ciphertext = cipher.encrypt(nonce, data)
+            .map_err(|e| Error::Storage(format!("encryption failed: {:?}", e)))?;
+        let mut result = Vec::with_capacity(12 + ciphertext.len());
+        result.extend_from_slice(&nonce_bytes);
+        result.extend_from_slice(&ciphertext);
+        Ok(result)
+    }
+
+    /// Decrypt data using AES-256-GCM.
+    /// Expects: nonce (12 bytes) || ciphertext
+    fn decrypt_data(&self, encrypted: &[u8]) -> Result<Vec<u8>> {
+        if encrypted.len() < 12 {
+            return Err(Error::Storage("invalid encrypted data (too short)".to_string()));
+        }
+        let key = self.encrypt_key.ok_or_else(|| Error::Storage(
+            "encryption key not set".to_string()
+        ))?;
+        use aes_gcm::{Aes256Gcm, Key, Nonce, aead::Aead};
+        let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
+        let nonce = aes_gcm::Nonce::from_slice(&encrypted[..12]);
+        let ciphertext = &encrypted[12..];
+        let plaintext = cipher.decrypt(nonce, ciphertext)
+            .map_err(|e| Error::Storage(format!("decryption failed: {:?}", e)))?;
+        Ok(plaintext)
+    }
+
     /// Register a storage backend and return its type.
     pub async fn register_backend(&self, backend: Arc<dyn StorageBackend>) -> BackendType {
         self.router.register_backend(backend).await
@@ -110,8 +162,20 @@ impl StorageHub {
 
     /// Store data with replica support.
     /// If opts.replicas > 1, writes to multiple backends.
+    /// If opts.encrypted, encrypts data using AES-256-GCM.
     pub async fn put(&self, key: &str, value: Bytes, opts: StorageOptions) -> Result<StoreReceipt> {
-        tracing::debug!("PUT {} (replicas={})", key, opts.replicas);
+        tracing::debug!("PUT {} (replicas={}, encrypted={})", key, opts.replicas, opts.encrypted);
+
+        // Encrypt data if requested and key is available
+        let (data_to_store, is_encrypted) = if opts.encrypted && self.encrypt_key.is_some() {
+            let encrypted = self.encrypt_data(&value).await?;
+            (Bytes::from(encrypted), true)
+        } else {
+            if opts.encrypted && self.encrypt_key.is_none() {
+                tracing::warn!("Encryption requested but no key set; storing plaintext");
+            }
+            (value, false)
+        };
 
         let replicas = opts.replicas.max(1) as usize;
         let backends_snapshot = self.router.backends_snapshot().await;
@@ -121,7 +185,7 @@ impl StorageHub {
         }
 
         // Write to primary backend (selected by policy or backend_hint)
-        let primary_receipt = self.router.store(key, value.clone(), opts.clone()).await?;
+        let primary_receipt = self.router.store(key, data_to_store.clone(), opts.clone()).await?;
 
         // Persist metadata for TTL/GC
         let meta = StoreMeta {
@@ -130,6 +194,7 @@ impl StorageHub {
             content_hash: primary_receipt.content_hash.clone(),
             size_bytes: primary_receipt.size_bytes,
             backend: primary_receipt.backend,
+            encrypted: is_encrypted,
         };
         {
             let mut metadata = self.metadata.write().await;
@@ -151,7 +216,7 @@ impl StorageHub {
                     backend_hint: Some(*backend_type),
                     ..opts.clone()
                 };
-                match self.router.store(key, value.clone(), replica_opts).await {
+                match self.router.store(key, data_to_store.clone(), replica_opts).await {
                     Ok(_) => {
                         tracing::debug!("Replica {} written to {:?}", key, backend_type);
                         written += 1;
@@ -167,6 +232,7 @@ impl StorageHub {
     }
 
     /// Read data. If TTL is set and expired, deletes the key and returns None.
+    /// If data is encrypted, decrypts it using AES-256-GCM.
     pub async fn get(&self, key: &str) -> Result<Option<Bytes>> {
         tracing::debug!("GET {}", key);
 
@@ -177,7 +243,21 @@ impl StorageHub {
             return Ok(None);
         }
 
-        self.router.retrieve(key).await
+        let data = self.router.retrieve(key).await?;
+
+        // Decrypt if the key is marked as encrypted
+        if let Some(ref data_bytes) = data {
+            let is_encrypted = {
+                let metadata = self.metadata.read().await;
+                metadata.get(key).map(|m| m.encrypted).unwrap_or(false)
+            };
+            if is_encrypted {
+                let decrypted = self.decrypt_data(data_bytes).await?;
+                return Ok(Some(Bytes::from(decrypted)));
+            }
+        }
+
+        Ok(data)
     }
 
     /// Check if a key is expired based on its metadata.

@@ -44,6 +44,9 @@ enum Commands {
         /// Storage tier: hot, warm, cold, archive
         #[arg(long)]
         tier: Option<String>,
+        /// Encrypt data (AES-256-GCM, requires USP_ENCRYPTION_KEY env var)
+        #[arg(long)]
+        encrypted: bool,
     },
     /// Retrieve a file
     Get {
@@ -131,6 +134,30 @@ fn should_use_daemon(daemon_flag: bool, addr: &str) -> bool {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Read encryption key from env var (base64 encoded, 32 bytes)
+    let encrypt_key: Option<[u8; 32]> = std::env::var("USP_ENCRYPTION_KEY")
+        .ok()
+        .and_then(|s| {
+            match base64::decode(&s) {
+                Ok(bytes) if bytes.len() == 32 => {
+                    let mut key = [0u8; 32];
+                    key.copy_from_slice(&bytes);
+                    Some(key)
+                }
+                Ok(bytes) => {
+                    tracing::warn!(
+                        "USP_ENCRYPTION_KEY must be 32 bytes (got {}), encryption disabled",
+                        bytes.len()
+                    );
+                    None
+                }
+                Err(_) => {
+                    tracing::warn!("USP_ENCRYPTION_KEY is not valid base64, encryption disabled");
+                    None
+                }
+            }
+        });
+
     // Init tracing: skip for Daemon (it inits its own with file output)
     if !matches!(&cli.command, Commands::Daemon { .. }) {
         let _ = tracing_subscriber::fmt()
@@ -154,7 +181,7 @@ async fn main() -> Result<()> {
     if use_daemon {
         // Daemon client mode
         match &cli.command {
-            Commands::Store { key, file, ttl, replicas, tier } => {
+            Commands::Store { key, file, ttl, replicas, tier, encrypted } => {
                 let tier_str = tier.as_deref().unwrap_or("");
                 let params = serde_json::json!({
                     "key": key,
@@ -162,6 +189,7 @@ async fn main() -> Result<()> {
                     "ttl": ttl,
                     "replicas": replicas,
                     "tier": tier_str,
+                    "encrypted": encrypted,
                 });
                 let resp = daemon::send_to_daemon(&cli.daemon_addr, "put", params).await?;
                 if let Some(err) = resp.error {
@@ -281,10 +309,15 @@ async fn main() -> Result<()> {
                 tracing::debug!("No config file found, using defaults");
                 usp_core::config::Config::default()
             });
-        let hub = config.init().await?;
+        let mut hub = config.init().await?;
+
+        // Set encryption key if present
+        if let Some(key) = encrypt_key {
+            hub = hub.with_encryption_key(key);
+        }
 
         match &cli.command {
-            Commands::Store { key, file, ttl, replicas, tier } => {
+            Commands::Store { key, file, ttl, replicas, tier, encrypted } => {
                 let data = tokio::fs::read(file).await?;
                 let bytes = Bytes::from(data);
                 let tier_opt = if let Some(t) = tier {
@@ -296,6 +329,7 @@ async fn main() -> Result<()> {
                     ttl_seconds: *ttl,
                     replicas: *replicas,
                     tier: tier_opt,
+                    encrypted: *encrypted,
                     ..StorageOptions::default()
                 };
                 let receipt = hub.put(key, bytes, opts).await?;

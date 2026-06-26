@@ -346,6 +346,10 @@ async fn handle_put(hub: &StorageHub, params: serde_json::Value) -> Result<Daemo
     } else {
         None
     };
+    let encrypted = params
+        .get("encrypted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     let data = tokio::fs::read(file).await?;
     let bytes = Bytes::from(data);
@@ -353,6 +357,7 @@ async fn handle_put(hub: &StorageHub, params: serde_json::Value) -> Result<Daemo
         ttl_seconds: ttl,
         replicas,
         tier: tier_opt,
+        encrypted,
         ..Default::default()
     };
 

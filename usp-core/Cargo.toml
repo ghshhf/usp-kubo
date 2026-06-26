@@ -34,6 +34,10 @@ libp2p = { workspace = true, features = ["tcp", "quic", "yamux", "noise", "gossi
 # For retry jitter
 rand = "0.8"
 
+# For encryption (AES-256-GCM)
+aes-gcm = "0.10"
+zeroize = "1.8"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile.workspace = true
