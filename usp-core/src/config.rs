@@ -302,7 +302,8 @@ impl Config {
     /// If some backends fail to initialize, they are logged as warnings
     /// and the remaining backends are still registered.
     pub async fn init(&self) -> crate::Result<StorageHub> {
-        let hub = StorageHub::new();
+        let data_dir = PathBuf::from(self.effective_data_dir());
+        let hub = StorageHub::with_data_dir(data_dir);
         let mut errors: Vec<String> = Vec::new();
         let mut initialized_any = false;
 
@@ -430,6 +431,11 @@ impl Config {
                     errors.push(msg);
                 }
             }
+        }
+
+        // Load persisted metadata
+        if let Err(e) = hub.load_metadata().await {
+            tracing::warn!("Failed to load metadata: {}", e);
         }
 
         // If no backends were successfully initialized, return an error
