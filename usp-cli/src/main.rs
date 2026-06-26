@@ -111,13 +111,13 @@ fn parse_backend(s: &str) -> Result<BackendType> {
     }
 }
 
-/// Check if daemon is running and we should use it.
-fn should_use_daemon(daemon_flag: bool, pid_file: &str) -> bool {
-    if daemon_flag {
-        return true;
+/// Check if daemon is running by trying to connect.
+fn should_use_daemon(daemon_flag: bool, addr: &str) -> bool {
+    if !daemon_flag {
+        // Auto-detect: try to connect to daemon
+        return daemon::is_daemon_running(addr);
     }
-    // Auto-detect: check if PID file exists
-    daemon::is_daemon_running(pid_file)
+    true
 }
 
 #[tokio::main]
@@ -139,51 +139,11 @@ async fn main() -> Result<()> {
         return daemon::stop_daemon(DEFAULT_PID_FILE).await;
     }
 
-    // Handle Init command
-    if let Commands::Init { backend } = &cli.command {
-        let backend_type = parse_backend(backend)?;
-        let mut config = usp_core::config::Config::default();
-
-        match backend_type {
-            BackendType::Local => {
-                config.backends.local.enabled = true;
-                config.backends.local.data_dir = Some(cli.data_dir.clone());
-            }
-            BackendType::P2P => {
-                config.backends.p2p.enabled = true;
-            }
-            BackendType::CloudS3 => {
-                config.backends.s3.enabled = true;
-            }
-            BackendType::Decentralized => {
-                config.backends.decentralized.enabled = true;
-            }
-        }
-
-        let config_path = std::path::Path::new(".usp.toml");
-        config.save_to(config_path)?;
-        println!("Configuration written to {}", config_path.display());
-
-        match config.init().await {
-            Ok(_hub) => {
-                println!("Backend {:?} initialized successfully.", backend_type);
-                println!("You can now use 'usp store <key> <file>' to store data.");
-            }
-            Err(e) => {
-                eprintln!("Warning: config written but backend init failed: {}", e);
-                eprintln!("You can retry by running 'usp init' again.");
-            }
-        }
-        return Ok(());
-    }
-
-    // Decide whether to use daemon or local mode
-    let use_daemon = should_use_daemon(cli.daemon, DEFAULT_PID_FILE);
+    // Decide: use daemon client or local mode
+    let use_daemon = should_use_daemon(cli.daemon, &cli.daemon_addr);
 
     if use_daemon {
-        // Daemon mode: send requests to daemon via TCP
-        println!("Using daemon at {}", cli.daemon_addr);
-
+        // Daemon client mode
         match &cli.command {
             Commands::Store { key, file, ttl, replicas } => {
                 let params = serde_json::json!({
@@ -293,6 +253,11 @@ async fn main() -> Result<()> {
                     }
                 }
             }
+            Commands::Init { backend } => {
+                // Init via daemon: just validate the backend type
+                let _ = parse_backend(backend)?;
+                println!("Backend '{}' is valid. Use 'usp init --backend {}' in local mode to configure.", backend, backend);
+            }
             _ => unreachable!(),
         }
     } else {
@@ -386,6 +351,41 @@ async fn main() -> Result<()> {
             Commands::Gc => {
                 let deleted = hub.gc().await?;
                 println!("GC complete: {} expired keys deleted", deleted);
+            }
+            Commands::Init { backend } => {
+                let backend_type = parse_backend(backend)?;
+                let mut config = usp_core::config::Config::load()
+                    .unwrap_or_else(|_| usp_core::config::Config::default());
+
+                match backend_type {
+                    BackendType::Local => {
+                        config.backends.local.enabled = true;
+                        config.backends.local.data_dir = Some(cli.data_dir.to_string_lossy().to_string());
+                    }
+                    BackendType::P2P => {
+                        config.backends.p2p.enabled = true;
+                    }
+                    BackendType::CloudS3 => {
+                        config.backends.s3.enabled = true;
+                        // Prompt for required fields (or use env vars)
+                        if config.backends.s3.bucket.is_none() {
+                            println!("Warning: S3 bucket not configured. Set USP_S3_BUCKET env var or edit .usp.toml");
+                        }
+                    }
+                    BackendType::Decentralized => {
+                        config.backends.decentralized.enabled = true;
+                    }
+                }
+
+                // Save config to .usp.toml
+                let config_path = std::path::Path::new(".usp.toml");
+                if let Err(e) = config.save_to(config_path) {
+                    tracing::warn!("Failed to save config: {}", e);
+                    anyhow::bail!("Failed to save config: {}", e);
+                }
+
+                println!("Initialized {:?} backend. Config saved to .usp.toml", backend_type);
+                println!("Run 'usp init --backend {}' to reconfigure.", backend);
             }
             _ => unreachable!(),
         }

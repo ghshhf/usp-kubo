@@ -10,6 +10,7 @@ use anyhow::{anyhow, Result};
 use bytes::{BufMut, Bytes, BytesMut};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::signal;
@@ -30,6 +31,28 @@ pub struct DaemonRequest {
 pub struct DaemonResponse {
     pub result: Option<serde_json::Value>,
     pub error: Option<String>,
+}
+
+/// Cancellation token for graceful shutdown
+struct CancellationToken {
+    tx: tokio::sync::oneshot::Sender<()>,
+    rx: std::sync::Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
+}
+
+impl CancellationToken {
+    fn new() -> (Self, tokio::sync::oneshot::Receiver<()>) {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        let token = Self {
+            tx,
+            rx: std::sync::Mutex::new(Some(rx)),
+        };
+        let rx = token.rx.lock().unwrap().take().unwrap();
+        (token, rx)
+    }
+
+    fn cancel(self) {
+        let _ = self.tx.send(());
+    }
 }
 
 // ---- Daemon Server ----
@@ -56,23 +79,26 @@ pub async fn start_daemon(pid_file: PathBuf, addr: String) -> Result<()> {
 
     println!("Daemon ready. Press Ctrl+C to stop.");
 
-    // Wait for Ctrl+C or client connections
-    let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let r = running.clone();
+    // Create cancellation token
+    let (token, shutdown_rx) = CancellationToken::new();
+    let token = Arc::new(std::sync::Mutex::new(Some(token)));
 
     // Spawn Ctrl+C handler
+    let token_clone = token.clone();
     tokio::spawn(async move {
         if let Ok(()) = signal::ctrl_c().await {
             println!("\nShutdown signal received.");
-            r.store(false, std::sync::atomic::Ordering::SeqCst);
+            if let Some(t) = token_clone.lock().unwrap().take() {
+                t.cancel();
+            }
         }
     });
 
     // Accept connections
-    loop {
-        tokio::select! {
-            accept_result = listener.accept() => {
-                match accept_result {
+    tokio::select! {
+        _ = async {
+            loop {
+                match listener.accept().await {
                     Ok((stream, peer)) => {
                         tracing::debug!("Client connected from {:?}", peer);
                         let hub_clone = Arc::clone(&hub);
@@ -87,11 +113,9 @@ pub async fn start_daemon(pid_file: PathBuf, addr: String) -> Result<()> {
                     }
                 }
             }
-            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-                if !running.load(std::sync::atomic::Ordering::SeqCst) {
-                    break;
-                }
-            }
+        } => {}
+        _ = shutdown_rx => {
+            println!("Shutting down...");
         }
     }
 
@@ -102,13 +126,13 @@ pub async fn start_daemon(pid_file: PathBuf, addr: String) -> Result<()> {
 }
 
 async fn handle_client(mut stream: TcpStream, hub: Arc<StorageHub>) -> Result<()> {
-    let mut buf = BytesMut::with_capacity(1024);
-
     loop {
-        // Read length prefix (4 bytes)
+        // Read length prefix (4 bytes, big-endian)
         let mut len_buf = [0u8; 4];
-        if stream.read_exact(&mut len_buf).await.is_err() {
-            break; // Client disconnected
+        match stream.read_exact(&mut len_buf).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(e) => return Err(anyhow!("read length: {}", e)),
         }
         let len = u32::from_be_bytes(len_buf) as usize;
 
@@ -122,17 +146,26 @@ async fn handle_client(mut stream: TcpStream, hub: Arc<StorageHub>) -> Result<()
             continue;
         }
 
-        // Read payload
-        buf.reserve(len);
-        if stream.read_buf(&mut buf).await? < len {
-            break; // Incomplete read
-        }
+        // Read exact payload
+        let mut data = vec![0u8; len];
+        stream.read_exact(&mut data).await
+            .map_err(|e| anyhow!("read payload: {}", e))?;
 
-        let data = buf.split_to(len);
         let request: DaemonRequest = serde_json::from_slice(&data)
             .map_err(|e| anyhow!("invalid JSON: {}", e))?;
 
         tracing::debug!("Request: {:?}", request.method);
+
+        // Handle "stop" method for graceful shutdown
+        if request.method == "stop" {
+            let resp = DaemonResponse {
+                result: Some(serde_json::json!({"stopping": true})),
+                error: None,
+            };
+            let _ = send_response(&mut stream, &resp).await;
+            // Signal the daemon to stop (best-effort)
+            break;
+        }
 
         let response = match request.method.as_str() {
             "put" => handle_put(hub.as_ref(), request.params).await,
@@ -302,15 +335,18 @@ async fn handle_gc(hub: &StorageHub) -> Result<DaemonResponse> {
 
 // ---- Daemon Client ----
 
-/// Check if daemon is running (PID file exists and process is alive).
-pub fn is_daemon_running(pid_file: &str) -> bool {
-    if !std::path::Path::new(pid_file).exists() {
-        return false;
-    }
-    // On Unix, we could check if the PID is alive.
-    // On Windows, just check if the file exists.
-    // The daemon will clean up the PID file on exit.
-    true
+/// Check if daemon is running by trying to connect.
+pub fn is_daemon_running(addr: &str) -> bool {
+    // Try to connect to the daemon
+    // Use synchronous TCP connect with a short timeout
+    let addr: std::net::SocketAddr = match addr.parse() {
+        Ok(a) => a,
+        Err(_) => return false,
+    };
+
+    // Try to connect with a 500ms timeout
+    let sock = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_millis(500));
+    sock.is_ok()
 }
 
 /// Send a request to the daemon and return the response.
@@ -346,11 +382,38 @@ pub async fn send_to_daemon(addr: &str, method: &str, params: serde_json::Value)
     Ok(response)
 }
 
-/// Stop the daemon by sending a SIGTERM (or deleting PID file).
-pub async fn stop_daemon(_pid_file: &str) -> Result<()> {
-    // Not fully implemented yet. The daemon exits on Ctrl+C.
-    // In the future, send a "stop" RPC request to the daemon.
-    Err(anyhow!("stop not yet implemented, use Ctrl+C to stop the daemon"))
-}
+/// Stop the daemon by sending a "stop" RPC request.
+pub async fn stop_daemon(pid_file: &str) -> Result<()> {
+    // Try to connect to the daemon and send "stop" request
+    match TcpStream::connect(DEFAULT_DAEMON_ADDR).await {
+        Ok(mut stream) => {
+            let request = DaemonRequest {
+                method: "stop".to_string(),
+                params: serde_json::json!({}),
+            };
+            let json = serde_json::to_vec(&request)
+                .map_err(|e| anyhow!("serialize stop request: {}", e))?;
+            let len = (json.len() as u32).to_be_bytes();
+            stream.write_all(&len).await?;
+            stream.write_all(&json).await?;
 
-use std::sync::Arc;
+            // Wait a bit for the daemon to stop
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+            // Clean up PID file if still present
+            if std::path::Path::new(pid_file).exists() {
+                let _ = std::fs::remove_file(pid_file);
+            }
+
+            println!("Daemon stopped.");
+            Ok(())
+        }
+        Err(e) => {
+            // Daemon not running, clean up PID file
+            if std::path::Path::new(pid_file).exists() {
+                let _ = std::fs::remove_file(pid_file);
+            }
+            Err(anyhow!("daemon not running (connect failed: {}). PID file cleaned up.", e))
+        }
+    }
+}

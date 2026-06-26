@@ -280,7 +280,9 @@ impl StorageHub {
         };
 
         let now = Utc::now();
-        let pinned = self.pinned_keys.read().await;
+        // Clone pinned set so we don't hold the lock during the loop
+        let pinned: std::collections::HashSet<String> =
+            self.pinned_keys.read().await.iter().cloned().collect();
 
         for key in &keys {
             // Skip pinned keys
