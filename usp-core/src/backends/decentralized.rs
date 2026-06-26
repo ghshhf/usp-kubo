@@ -454,6 +454,35 @@ impl StorageBackend for DecentralizedStorage {
     }
 }
 
+
+    async fn pin(&self, key: &str) -> Result<()> {
+        let cid = {
+            let cids = self.stored_cids.read().await;
+            match cids.get(key) {
+                Some(entry) => entry.cid.clone(),
+                None => return Err(Error::KeyNotFound(key.to_string())),
+            }
+        };
+        self.pin_cid(&cid).await
+    }
+
+    async fn unpin(&self, key: &str) -> Result<()> {
+        let cid = {
+            let cids = self.stored_cids.read().await;
+            match cids.get(key) {
+                Some(entry) => entry.cid.clone(),
+                None => return Err(Error::KeyNotFound(key.to_string())),
+            }
+        };
+        let url = self.api_url.join("/api/v0/pin/rm")
+            .map_err(|e| Error::Storage(format!("failed to build pin/rm URL: {}", e)))?;
+        match self.client.post(url).query(&[("arg", &cid)]).send().await {
+            Ok(resp) if resp.status().is_success() => Ok(()),
+            Ok(_) => Ok(()),
+            Err(e) => { tracing::warn!("IPFS unpin failed: {}", e); Ok(()) }
+        }
+    }
+
 #[cfg(test)]
 mod tests {
     use super::*;

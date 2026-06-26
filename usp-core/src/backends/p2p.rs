@@ -430,7 +430,7 @@ impl StorageBackend for P2PBackend {
         let used_space: u64 = stored.values().map(|v| v.len() as u64).sum();
         let peer_count = self.connected_peers.read().await.len() as u32;
         Ok(BackendStats {
-            total_capacity: 0, // P2P has no fixed capacity
+            total_capacity: u64::MAX, // P2P has no fixed capacity
             used_space,
             available_space: u64::MAX,
             item_count,

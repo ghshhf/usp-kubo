@@ -85,4 +85,16 @@ pub trait StorageBackend: Send + Sync {
         let _ = self;
         Ok(Vec::new())
     }
+
+    /// Pin a key to prevent garbage collection.
+    /// Default: no-op (backend does not support pinning).
+    async fn pin(&self, _key: &str) -> Result<()> {
+        Ok(())
+    }
+
+    /// Unpin a key to allow garbage collection.
+    /// Default: no-op (backend does not support pinning).
+    async fn unpin(&self, _key: &str) -> Result<()> {
+        Ok(())
+    }
 }
