@@ -122,10 +122,10 @@ fn should_use_daemon(daemon_flag: bool, addr: &str) -> bool {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // Initialize tracing (best-effort, won't panic if already initialized)
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
 
     let cli = Cli::parse();
 
